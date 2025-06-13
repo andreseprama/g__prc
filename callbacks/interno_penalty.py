@@ -14,6 +14,9 @@ def interno_penalties(
     permitindo descartar o par todo, MAS só se esses nós ainda não
     tiverem sido usados noutra disjunção.
     """
+    if not hasattr(routing, "_disj_nodes"):
+        routing._disj_nodes = set()
+
     for srv_id in pickup_ids:
         p = manager.NodeToIndex(srv_id)
         d = manager.NodeToIndex(srv_id + n_srv)

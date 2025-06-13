@@ -62,22 +62,7 @@ async def rewrite_unload_city_if_return(df: pd.DataFrame, sess: AsyncSession) ->
 
 
 # ─────────────────── força retorno com Element() ──────────────────────────────
-def add_force_return_constraints(
-    routing: pywrapcp.RoutingModel,
-    manager: pywrapcp.RoutingIndexManager,
-    df: pd.DataFrame,
-    n_srv: int,
-) -> None:
-    """
-    Para cada serviço com force_return=True obriga o nó de entrega (drop)
-    a fechar a rota do veículo que o transportar:
-
-        (VehicleVar(drop) == v)  ⇒  (NextVar(drop) == End(v))
-
-    Optimização:
-      • só cria booleans para veículos cujo End(v) está no domínio de NextVar
-      • nada de Element() nem listas gigantes – < 30 k BoolVars no teu caso
-    """
+def add_force_return_constraints(routing, manager, df, n_srv):
     solver = routing.solver()
 
     for i in range(n_srv):
@@ -86,27 +71,19 @@ def add_force_return_constraints(
 
         drop = manager.NodeToIndex(i + n_srv)
         if drop < 0:
-            continue  # nó já removido
+            continue  # nó removido
 
         next_var = routing.NextVar(drop)
         vehicle_var = routing.VehicleVar(drop)
 
-        # para cada veículo possível do 'drop'
+        # usa apenas intervalos Min/Max  -->  nunca chama Contains()
+        lo, hi = next_var.Min(), next_var.Max()
+
         for v in range(routing.vehicles()):
             end_v = routing.End(v)
+            if end_v < lo or end_v > hi:
+                continue  # fora do domínio
 
-            # só se o sucessor 'end_v' faz parte do domínio de next_var
-            if not next_var.Contains(end_v):
-                continue
-
-            b_vehicle = solver.IsEqualCstVar(vehicle_var, v)  # 0/1
-            b_nextend = solver.IsEqualCstVar(next_var, end_v)  # 0/1
-
-            # implicação: b_vehicle ⇒ b_nextend   (uso da desigualdade)
-            solver.Add(b_vehicle <= b_nextend)
-
-        logger.debug(
-            "🔁 Forçando retorno: serviço %d (drop node %d) termina a rota",
-            i,
-            i + n_srv,
-        )
+            b_v = solver.IsEqualCstVar(vehicle_var, v)
+            b_end = solver.IsEqualCstVar(next_var, end_v)
+            solver.Add(b_v <= b_end)  # (b_v ⇒ b_end)

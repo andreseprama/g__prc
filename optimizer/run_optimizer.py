@@ -139,7 +139,12 @@ async def optimize(
     routing = pywrapcp.RoutingModel(manager)
 
     def cost_cb(from_i: int, to_i: int) -> int:
-        return dist_matrix[manager.IndexToNode(from_i)][manager.IndexToNode(to_i)]
+        # end-nodes / sentinelas → custo 0
+        if routing.IsEnd(from_i) or routing.IsEnd(to_i):
+            return 0
+        f = manager.IndexToNode(from_i)
+        t = manager.IndexToNode(to_i)
+        return dist_matrix[f][t]
 
     transit_cb = routing.RegisterTransitCallback(cost_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_cb)

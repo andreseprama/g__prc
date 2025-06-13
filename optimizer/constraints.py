@@ -32,19 +32,19 @@ def apply_all_constraints(
     add_dimensions_and_constraints(routing, trailers, demand_callbacks)
 
     # 🚚 Penalização para serviços "internos" (mesma cidade)
-    low_prio_ids: list[int] = [
-        i
-        for i in range(len(df))
-        if norm(df.load_city_description.iat[i])
-        == norm(df.unload_city_description.iat[i])
-    ]
-    interno_penalties(
-        routing=routing,
-        manager=manager,
-        pickup_ids=low_prio_ids,
-        n_srv=len(df),
-        weight=int(constraint_weights.get("INTERNO_LOW_PEN", 1000)),
-    )
+    # low_prio_ids: list[int] = [
+    #     i
+    #     for i in range(len(df))
+    #     if norm(df.load_city_description.iat[i])
+    #     == norm(df.unload_city_description.iat[i])
+    # ]
+    # interno_penalties(
+    #     routing=routing,
+    #     manager=manager,
+    #     pickup_ids=low_prio_ids,
+    #     n_srv=len(df),
+    #     weight=int(constraint_weights.get("INTERNO_LOW_PEN", 1000)),
+    # )
 
     # 📏 Penalização de distância + limite máximo por trailer
     add_distance_penalty(
@@ -57,9 +57,9 @@ def apply_all_constraints(
     )
 
     # 🔁 Força retorno à base (para serviços marcados)
-    add_force_return_constraints(
-        routing=routing,
-        manager=manager,
-        df=df,
-        n_srv=n_services,
-    )
+    # add_force_return_constraints(
+    #     routing=routing,
+    #     manager=manager,
+    #     df=df,
+    #     n_srv=n_services,
+    # )
