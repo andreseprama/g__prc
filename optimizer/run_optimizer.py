@@ -138,12 +138,22 @@ async def optimize(
     manager = pywrapcp.RoutingIndexManager(n_nodes, n_veh, starts, ends)
     routing = pywrapcp.RoutingModel(manager)
 
-    def cost_cb(from_i: int, to_i: int) -> int:
-        # end-nodes / sentinelas → custo 0
-        if routing.IsEnd(from_i) or routing.IsEnd(to_i):
+    def cost_cb(from_idx: int, to_idx: int) -> int:
+        """Custo em km. 0 para qualquer sentinela (Start/End/unperformed)."""
+        # 1) Start / End → custo zero
+        if routing.IsStart(from_idx) or routing.IsEnd(from_idx):
             return 0
-        f = manager.IndexToNode(from_i)
-        t = manager.IndexToNode(to_i)
+        if routing.IsStart(to_idx) or routing.IsEnd(to_idx):
+            return 0
+
+        # 2) Índices fora do espaço “locations” (dummy / removidos) → zero
+        #    manager.Size() já inclui todos os nós--cidade; acima disso é sentinela.
+        if from_idx >= manager.Size() or to_idx >= manager.Size():
+            return 0
+
+        # 3) Conversão segura (aqui sabemos que são cidades válidas)
+        f = manager.IndexToNode(from_idx)
+        t = manager.IndexToNode(to_idx)
         return dist_matrix[f][t]
 
     transit_cb = routing.RegisterTransitCallback(cost_cb)
