@@ -19,49 +19,26 @@ def extract_routes(
     solution: Any,
     n_services: int = 0,
     debug: bool = False,
-) -> List[Tuple[int, List[int]]]:
+) -> list[tuple[int, list[int]]]:
     """
-    Extrai as rotas da solução do VRP OR-Tools.
-
-    Args:
-        routing: instância de RoutingModel.
-        manager: instância de RoutingIndexManager.
-        solution: objeto de solução retornado pelo solver.
-        n_services: número de serviços (para filtrar nós de carga/descarga).
-        debug: se True, escreve logs intermédios de cada passo.
-
-    Retorna:
-        Lista de tuplos (vehicle_id, [lista de nós visitados]).
+    Extrai (vehicle_id, [nós]) sem duplicar nem rotas vazias.
     """
-    result: List[Tuple[int, List[int]]] = []
+    rotas: list[tuple[int, list[int]]] = []
 
-    for vehicle_id in range(routing.vehicles()):
-        index = routing.Start(vehicle_id)
-        path: List[int] = []
+    for v in range(routing.vehicles()):
+        idx = routing.Start(v)
+        path: list[int] = []
 
-        while not routing.IsEnd(index):
-            node = manager.IndexToNode(index)
-            if debug:
-                logger.debug(
-                    f"🚚 Trailer {vehicle_id} visitando node {node} (idx {index})"
-                )
-            # só adiciona nós que correspondem a serviços
-            if node < 2 * n_services:
+        while not routing.IsEnd(idx):
+            node = manager.IndexToNode(idx)
+            if node < 2 * n_services:  # só serviços
                 path.append(node)
-            index = solution.Value(routing.NextVar(index))
+            idx = solution.Value(routing.NextVar(idx))
 
-        # inclui nó de final (caso seja serviço)
-        final_node = manager.IndexToNode(index)
-        if final_node < 2 * n_services:
-            path.append(final_node)
+        if path:  # guarda apenas se tiver nós
+            rotas.append((v, path))
 
-        if len(path) > 1:
-            result.append((vehicle_id, path))
-            if path:
-                logging.debug(f"→ Rota (mesmo que curto) veículo {vehicle_id}: {path}")
-                result.append((vehicle_id, path))
-
-    return result
+    return rotas
 
 
 def norm(texto: str) -> str:

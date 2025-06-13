@@ -188,20 +188,20 @@ async def optimize(
         weights = {r.cod: float(r.valor) for r in rows2}
 
     # # 8) aplica constraints
-    # try:
-    #     apply_all_constraints(
-    #         routing=routing,
-    #         manager=manager,
-    #         df=df,
-    #         trailers=trailers,
-    #         n_services=len(df),
-    #         depot_indices=starts,
-    #         distance_matrix=dist_matrix,
-    #         constraint_weights=weights,
-    #     )
-    # except Exception as e:
-    #     logger.exception(f"❌ Falha ao aplicar constraints: {e}")
-    #     return []
+    try:
+        apply_all_constraints(
+            routing=routing,
+            manager=manager,
+            df=df,
+            trailers=trailers,
+            n_services=len(df),
+            depot_indices=starts,
+            distance_matrix=dist_matrix,
+            constraint_weights=weights,
+        )
+    except Exception as e:
+        logger.exception(f"❌ Falha ao aplicar constraints: {e}")
+        return []
 
     # 9) resolve
     try:
@@ -223,9 +223,10 @@ async def optimize(
             dia,
             df,
             routes,
-            trailer_starts=starts,  # já existe
-            trailers=trailers,  # já existe
-            dist_matrix=dist_matrix,  # 🆕  novo parâmetro
+            trailer_starts=starts,
+            trailers=trailers,
+            dist_matrix=dist_matrix,  #  NOVO  ←
+            city_idx=city_idx,  #  NOVO  ←
         )
     except Exception as e:
         logger.exception(f"❌ Falha ao persistir rotas: {e}")

@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict, Any
 import logging
 import pandas as pd
 from datetime import date
+from backend.solver.utils import norm
 
 logger = logging.getLogger(__name__)
 
@@ -16,31 +17,43 @@ async def persist_routes(
     routes: list[tuple[int, list[int]]],
     trailer_starts: list[int],
     trailers: list[dict[str, Any]],
-    dist_matrix: list[list[int]],  #  NOVO  ←
+    dist_matrix: list[list[int]],
+    city_idx: dict[str, int],  #  NOVO  ←
 ) -> list[int]:
     """
-    Guarda no banco as rotas otimizadas e suas paradas.
-    Retorna os IDs das novas rotas persistidas.
+    Guarda rotas / paragens + calcula total_km e total_ceu.
     """
     rota_ids: list[int] = []
+    n_srv = len(df)
 
+    # ---------------- função auxiliar -----------------
+    def node_to_city_idx(node: int) -> int:
+        """Converte nº de nó (pickup/delivery) para índice de cidade."""
+        if node < n_srv:  # pickup
+            city = norm(df.load_city.iat[node])
+        else:  # delivery
+            city = norm(df.unload_city.iat[node - n_srv])
+        return city_idx[city]
+
+    # --------------------------------------------------
     for vehicle_id, path in routes:
         trailer = trailers[vehicle_id]
-        start_idx = trailer_starts[vehicle_id]
+        base_city_idx = trailer_starts[vehicle_id]  # índice da base (= start_idx)
 
-        # --- total_km -------------------------------------------------
+        # ------- total_km -------------
         km = 0
-        for a, b in zip(path, path[1:]):
-            km += dist_matrix[a][b]
-        km = int(round(km))  # opcional: arredondar
+        prev = base_city_idx  # base → 1.º nó
+        for n in path:
+            cur = node_to_city_idx(n)
+            km += dist_matrix[prev][cur]
+            prev = cur
+        km += dist_matrix[prev][base_city_idx]  # último nó → base
+        km = int(round(km))
 
-        # --- total_ceu -----------------------------------------------
-        ceu = (
-            sum(df.ceu_int.iloc[node] for node in path if node < len(df)) / 10.0
-        )  # volta a ser float (ex.: 3.6 CEU)
+        # ------- total_ceu ------------
+        ceu = sum(df.ceu_int.iloc[n] for n in path if n < n_srv) / 10.0
 
-        # --------------------------------------------------------------
-        # Criação da rota
+        # ------- INSERT rota ----------
         q_rota = await sess.execute(
             text(
                 """
@@ -54,29 +67,24 @@ async def persist_routes(
             {
                 "data": dia,
                 "trailer_id": trailer["id"],
-                "origem_idx": start_idx,
-                "total_km": km,  # ← NOVO
-                "total_ceu": ceu,  # ← NOVO
+                "origem_idx": base_city_idx,
+                "total_km": km,
+                "total_ceu": ceu,
             },
         )
         rota_id = q_rota.scalar()
-
         if rota_id is None:
-            logging.error(f"❌ Falha ao criar rota para trailer {trailer['registry']}")
+            logger.error(f"❌ Falha ao criar rota para trailer {trailer['registry']}")
             continue
 
         rota_ids.append(rota_id)
+        logger.info(f"📝 Rota {rota_id} criada (km={km}, CEU={ceu})")
 
-        logging.info(f"📝 Criada rota ID {rota_id} para trailer {trailer['registry']}")
-
+        # ------- INSERT paragens -------
         for ordem, node in enumerate(path):
             try:
-                n_srv = len(df)
-                is_pickup = int(node) < n_srv
-                base_idx = int(node) if is_pickup else int(node) - n_srv
-                if base_idx >= n_srv or base_idx < 0:
-                    continue
-
+                is_pickup = node < n_srv
+                base_idx = node if is_pickup else node - n_srv
                 service_id = int(df.iloc[base_idx]["id"])
                 node_type = "PICKUP" if is_pickup else "DELIVERY"
 
@@ -95,7 +103,7 @@ async def persist_routes(
                     },
                 )
             except Exception as e:
-                logging.warning(f"⚠️ Erro ao adicionar parada na rota {rota_id}: {e}")
+                logger.warning(f"⚠️ Erro ao adicionar parada na rota {rota_id}: {e}")
 
     await sess.commit()
     return rota_ids

@@ -13,20 +13,20 @@ from backend.solver.location_rules import add_force_return_constraints
 from backend.solver.utils import norm
 
 
-def add_pickup_delivery_pairs(routing, manager, df):
-    n_srv = len(df)
-    dist_dim = routing.GetDimensionOrDie("Distance")  # ← 1)
+# def add_pickup_delivery_pairs(routing, manager, df):
+#     n_srv = len(df)
+#     dist_dim = routing.GetDimensionOrDie("Distance")  # ← 1)
 
-    for i in range(n_srv):
-        p = manager.NodeToIndex(i)
-        d = manager.NodeToIndex(i + n_srv)
+#     for i in range(n_srv):
+#         p = manager.NodeToIndex(i)
+#         d = manager.NodeToIndex(i + n_srv)
 
-        if p < 0 or d < 0:  # ← 3) protecção extra
-            continue
+#         if p < 0 or d < 0:  # ← 3) protecção extra
+#             continue
 
-        routing.AddPickupAndDelivery(p, d)
-        routing.solver().Add(routing.VehicleVar(p) == routing.VehicleVar(d))
-        routing.solver().Add(dist_dim.CumulVar(p) <= dist_dim.CumulVar(d))  # ← 1)
+#         routing.AddPickupAndDelivery(p, d)
+#         routing.solver().Add(routing.VehicleVar(p) == routing.VehicleVar(d))
+#         routing.solver().Add(dist_dim.CumulVar(p) <= dist_dim.CumulVar(d))  # ← 1)
 
 
 def apply_all_constraints(
@@ -80,4 +80,4 @@ def apply_all_constraints(
         n_srv=n_services,
     )
 
-    add_pickup_delivery_pairs(routing, manager, df)
+    # add_pickup_delivery_pairs(routing, manager, df)
