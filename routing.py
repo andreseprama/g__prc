@@ -22,17 +22,14 @@ def safe_dist_lookup(
     i_idx: int,
     j_idx: int,
 ) -> int:
-    """
-    Converte índices OR-Tools → índices na dist_matrix.
-    Devolve DEFAULT_PENALTY se algo estiver fora do intervalo.
-    Nunca lança excepção — evita os “⛔ Erro em dist lookup”.
-    """
     try:
-        # obstáculos mais comuns primeiro (performance)
+        # ––––– protecções rápidas –––––
         if i_idx < 0 or j_idx < 0:
             return DEFAULT_PENALTY
+        if i_idx >= manager.Size() or j_idx >= manager.Size():  # 👈 NOVO
+            return 0  # start/end → 0 km (ou DEFAULT_PENALTY)
 
-        i = manager.IndexToNode(i_idx)
+        i = manager.IndexToNode(i_idx)  # já estamos seguros
         j = manager.IndexToNode(j_idx)
 
         if i >= len(dist_matrix) or j >= len(dist_matrix):
@@ -40,7 +37,7 @@ def safe_dist_lookup(
 
         return dist_matrix[i][j]
 
-    except Exception as exc:  # catch-all como “último recurso”
+    except Exception as exc:
         logger.error("⛔ dist_lookup falhou: i=%s j=%s → %s", i_idx, j_idx, exc)
         return DEFAULT_PENALTY
 

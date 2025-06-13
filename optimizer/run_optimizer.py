@@ -1,18 +1,10 @@
-# backend/solver/optimizer/run_optimizer.py
-
 from datetime import date
 from typing import Optional, List, Dict
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-
-# OR-Tools
-from ortools.constraint_solver import pywrapcp  # type: ignore
-
-# Funções utilitárias centralizadas
-from backend.solver.utils import norm, build_int_distance_matrix, extract_routes
-from backend.solver.geocode import fetch_and_store_city
+from ortools.constraint_solver import pywrapcp  # OR-Tools
 
 from .prepare_input import prepare_input_dataframe
 from .constraints import apply_all_constraints
@@ -28,210 +20,102 @@ async def optimize(
     matricula: Optional[str] = None,
     categoria_filtrada: Optional[List[str]] = None,
 ) -> List[int]:
-    """
-    1) Carrega dados
-    2) Filtra categoria (se houver)
-    3) Extrai e normaliza apenas as cidades usadas
-    4) Carrega coords da BD
-    5) Constrói matriz de distâncias (inteiros)
-    6) Monta modelo OR-Tools
-    7) Aplica constraints, resolve e persiste resultados
-    """
-    # 1) dados de entrada
+    # ──────────────────────────────────────────────────────────
+    # 1) lê serviços + trailers
+    # ──────────────────────────────────────────────────────────
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, matricula)
     if df.empty:
-        logger.warning("⚠️ Nenhum serviço disponível para otimização.")
+        logger.warning("⚠️ Nenhum serviço elegível.")
         return []
     if not trailers:
-        logger.warning("⚠️ Nenhum trailer ativo disponível.")
+        logger.warning("⚠️ Nenhum trailer activo.")
         return []
 
-    # 2) filtro por categoria
+    # opcional: filtrar por categoria
     if categoria_filtrada:
         from .trailer_routing import filter_services_by_category
 
         df = filter_services_by_category(df, categoria_filtrada, base_map)
         if df.empty:
-            logger.warning("⚠️ Nenhum serviço após filtro de categoria.")
+            logger.warning("⚠️ Nenhum serviço após filtro.")
             return []
 
-    # 3) extrai + normaliza cidades
-    raw_cities = (
-        df["load_city"].dropna().astype(str).tolist()
-        + df["unload_city"].dropna().astype(str).tolist()
-        + [t["base_city"] for t in trailers if t.get("base_city")]
-    )
-    seen = set()
-    locations: List[str] = []
-    for city in raw_cities:
-        c = norm(city)
-        if c and c not in seen:
-            seen.add(c)
-            locations.append(c)
-    logger.info(f"📍 Cidades usadas: {locations}")
+    # ──────────────────────────────────────────────────────────
+    # 2) modelo apenas-capacidade  (custo-arco = 0)
+    # ──────────────────────────────────────────────────────────
+    n_srv = len(df)  # 1 nó por serviço
+    n_veh = len(trailers)  # 1 veículo por trailer
 
-    # ——— 4) Carrega coords existentes na BD ———
-    q = await sess.execute(
-        text(
-            """
-            SELECT city_norm   AS norm_name
-                 , latitude    AS lat
-                 , longitude   AS lon
-              FROM public.city_coords
-             WHERE city_norm = ANY(:locs)
-            """
-        ),
-        {"locs": locations},
-    )
-    rows = q.fetchall()
-    coords_map: Dict[str, tuple[float, float]] = {
-        r.norm_name: (r.lat, r.lon) for r in rows
-    }
-    logger.debug(f"✅ Carreguei {len(coords_map)} coords da BD")
+    # cada veículo tem um “depósito” fictício no nó 0
+    starts = [0] * n_veh
+    ends = [0] * n_veh
 
-    # ——— 5) Preenche faltantes via TomTom ———
-    missing = set(locations) - set(coords_map.keys())
-    logger.debug(f"🛠️ Faltam coords para: {missing}")
-    for city in missing:
-        logger.info(f"🌐 Geocoding para '{city}'")
-        await fetch_and_store_city(sess, city)
-
-        # lê de volta do banco para garantir tudo
-        result = await sess.execute(
-            text(
-                """
-                SELECT latitude, longitude
-                  FROM public.city_coords
-                 WHERE city_norm = :city
-                """
-            ),
-            {"city": city},
-        )
-        row = result.first()
-        if not row:
-            raise RuntimeError(f"Não encontrou coords para {city} após INSERT")
-        coords_map[city] = (row.latitude, row.longitude)
-        logger.debug(f"🗺️ Agora '{city}' → {coords_map[city]}")
-
-    # ——— 6) Monta matriz de distâncias (km inteiros) ———
-    dist_matrix = build_int_distance_matrix(locations, coords_map)
-    logger.debug(
-        f"➡️ Matriz de distâncias construída: {len(dist_matrix)}x{len(dist_matrix)}"
-    )
-
-    # ——— 7) Segue o OR-Tools normalmente… ———
-    # Filtra trailers sem base_city para evitar inconsistências
-    trailers = [t for t in trailers if t.get("base_city")]
-    if not trailers:
-        logger.warning("⚠️ Nenhum trailer com base_city definido.")
-        return []
-
-    n_nodes = len(locations)
-    n_veh = len(trailers)
-    city_idx = {city: idx for idx, city in enumerate(locations)}
-    starts = [city_idx[norm(t["base_city"])] for t in trailers]
-    ends = starts[:]
-    assert (
-        len(starts) == n_veh
-    ), f"Vehicle count mismatch: n_veh={n_veh}, starts={len(starts)}"
-
-    manager = pywrapcp.RoutingIndexManager(n_nodes, n_veh, starts, ends)
+    manager = pywrapcp.RoutingIndexManager(n_srv + 1, n_veh, starts, ends)
     routing = pywrapcp.RoutingModel(manager)
 
-    def cost_cb(from_idx: int, to_idx: int) -> int:
-        # start/end → custo 0
-        if routing.IsStart(from_idx) or routing.IsEnd(from_idx):
-            return 0
-        if routing.IsStart(to_idx) or routing.IsEnd(to_idx):
-            return 0
+    dummy_cb = routing.RegisterTransitCallback(lambda i, j: 0)
+    routing.SetArcCostEvaluatorOfAllVehicles(dummy_cb)
 
-        # índices sentinela (fora do espaço de cidades)
-        if from_idx >= manager.Size() or to_idx >= manager.Size():
-            return 0
-
-        try:
-            fn = manager.IndexToNode(from_idx)
-            tn = manager.IndexToNode(to_idx)
-
-            # se por alguma razão escapou-nos um valor inválido
-            if fn >= len(dist_matrix) or tn >= len(dist_matrix):
-                return 0  # ← NADA de logging aqui
-
-            return dist_matrix[fn][tn]
-        except Exception:
-            return 0  # ← idem, silencioso
-
-    transit_cb = routing.RegisterTransitCallback(cost_cb)
-    routing.SetArcCostEvaluatorOfAllVehicles(transit_cb)
-
-    # 7) pesos das constraints
-    q2 = await sess.execute(
+    # ──────────────────────────────────────────────────────────
+    # 3) constraints (apenas capacidade)
+    # ──────────────────────────────────────────────────────────
+    # pesos não são usados mas continua a carregar por compat.
+    q = await sess.execute(
         text(
             """
             SELECT cd.cod, cw.valor
               FROM constraint_weight cw
               JOIN constraint_def cd ON cd.id = cw.def_id
              WHERE cw.versao = (SELECT MAX(versao) FROM constraint_weight)
-            """
+        """
         )
     )
-    rows2 = q2.fetchall()
-    if not rows2:
-        logger.warning("⚠️ Nenhum peso de restrição encontrado — usando pesos padrão.")
-        # default values as floats
-        weights: Dict[str, float] = {
-            "INTERNO_LOW_PEN": 10.0,
-            "PENALIDADE_DIST_KM": 3.0,
-            "MAX_DIST_POR_TRAILER": 400.0,
-        }
-    else:
-        weights = {r.cod: float(r.valor) for r in rows2}
+    weights = {r.cod: float(r.valor) for r in q.fetchall()}
 
-    # # 8) aplica constraints
-    try:
-        apply_all_constraints(
-            routing=routing,
-            manager=manager,
-            df=df,
-            trailers=trailers,
-            n_services=len(df),
-            depot_indices=starts,
-            distance_matrix=dist_matrix,
-            constraint_weights=weights,
-            enable_pickup_pairs=False,  # activa só o que precisares
-        )
-    except Exception as e:
-        logger.exception(f"❌ Falha ao aplicar constraints: {e}")
+    apply_all_constraints(
+        routing=routing,
+        manager=manager,
+        df=df,
+        trailers=trailers,
+        n_services=n_srv,
+        depot_indices=[0],  # o nó-0 é o “depósito”
+        distance_matrix=None,  # ignorado
+        constraint_weights=weights,
+        enable_interno=False,
+        enable_force_return=False,
+        enable_pickup_pairs=False,
+    )
+
+    # ──────────────────────────────────────────────────────────
+    # 4) solve
+    # ──────────────────────────────────────────────────────────
+    solution = solve_with_params(routing, manager)
+    if solution is None:
+        logger.warning("⚠️ Solver não encontrou solução.")
         return []
 
-    # 9) resolve
-    try:
-        solution = solve_with_params(routing, manager)
-        if solution is None:
-            logger.warning("⚠️ Nenhuma solução viável encontrada.")
-            return []
-    except Exception as e:
-        logger.exception(f"❌ Erro durante resolução: {e}")
-        return []
+    # ──────────────────────────────────────────────────────────
+    # 5) persistir
+    # ──────────────────────────────────────────────────────────
+    routes = [
+        (v, []) for v in range(routing.vehicles())  # OR-Tools vai preencher logo abaixo
+    ]
+    for v in range(routing.vehicles()):
+        idx = routing.Start(v)
+        while not routing.IsEnd(idx):
+            node = manager.IndexToNode(idx)
+            if node != 0:  # ignora o depósito fictício
+                routes[v][1].append(node - 1)  # serviços começam em 0
+            idx = solution.Value(routing.NextVar(idx))
 
-    # 10) extrai + persiste
-    try:
-        routes = extract_routes(
-            routing, manager, solution, n_services=len(df), debug=True
-        )
-        rota_ids = await persist_routes(
-            sess,
-            dia,
-            df,
-            routes,
-            trailer_starts=starts,
-            trailers=trailers,
-            dist_matrix=dist_matrix,  #  NOVO  ←
-            city_idx=city_idx,  #  NOVO  ←
-        )
-    except Exception as e:
-        logger.exception(f"❌ Falha ao persistir rotas: {e}")
-        return []
-
-    logger.info(f"✅ Persistidas {len(rota_ids)} rotas com sucesso.")
+    rota_ids = await persist_routes(
+        sess,
+        dia,
+        df,
+        routes,
+        trailer_starts=[0] * n_veh,  # depósito=0
+        trailers=trailers,
+        # dist_matrix=None,  # km = 0
+    )
+    logger.info("✅ %s rotas persistidas.", len(rota_ids))
     return rota_ids
