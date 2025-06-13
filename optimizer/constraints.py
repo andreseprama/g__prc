@@ -13,6 +13,22 @@ from backend.solver.location_rules import add_force_return_constraints
 from backend.solver.utils import norm
 
 
+def add_pickup_delivery_pairs(routing, manager, df):
+    n_srv = len(df)
+    dist_dim = routing.GetDimensionOrDie("Distance")  # ← 1)
+
+    for i in range(n_srv):
+        p = manager.NodeToIndex(i)
+        d = manager.NodeToIndex(i + n_srv)
+
+        if p < 0 or d < 0:  # ← 3) protecção extra
+            continue
+
+        routing.AddPickupAndDelivery(p, d)
+        routing.solver().Add(routing.VehicleVar(p) == routing.VehicleVar(d))
+        routing.solver().Add(dist_dim.CumulVar(p) <= dist_dim.CumulVar(d))  # ← 1)
+
+
 def apply_all_constraints(
     routing: pywrapcp.RoutingModel,
     manager: pywrapcp.RoutingIndexManager,
@@ -64,31 +80,4 @@ def apply_all_constraints(
         n_srv=n_services,
     )
 
-
-def add_pickup_delivery_pairs(
-    routing: pywrapcp.RoutingModel,
-    manager: pywrapcp.RoutingIndexManager,
-    df: pd.DataFrame,
-) -> None:
-    """
-    Para cada serviço i, cria dois nós:
-      • pickup  = i
-      • delivery = i + n_srv
-    e força:
-      • mesmo veículo
-      • pickup precede delivery
-    """
-    n_srv = len(df)
-
-    for i in range(n_srv):
-        p = manager.NodeToIndex(i)
-        d = manager.NodeToIndex(i + n_srv)
-
-        routing.AddPickupAndDelivery(p, d)
-
-        # Mesma viatura
-        routing.solver().Add(routing.VehicleVar(p) == routing.VehicleVar(d))
-        # Pickup antes do delivery
-        routing.solver().Add(
-            routing.CumulVar(p, "Distance") <= routing.CumulVar(d, "Distance")
-        )
+    add_pickup_delivery_pairs(routing, manager, df)

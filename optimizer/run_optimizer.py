@@ -219,7 +219,13 @@ async def optimize(
             routing, manager, solution, n_services=len(df), debug=True
         )
         rota_ids = await persist_routes(
-            sess, dia, df, routes, trailer_starts=starts, trailers=trailers
+            sess,
+            dia,
+            df,
+            routes,
+            trailer_starts=starts,  # já existe
+            trailers=trailers,  # já existe
+            dist_matrix=dist_matrix,  # 🆕  novo parâmetro
         )
     except Exception as e:
         logger.exception(f"❌ Falha ao persistir rotas: {e}")

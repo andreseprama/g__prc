@@ -13,26 +13,41 @@ async def persist_routes(
     sess: AsyncSession,
     dia: date,
     df: pd.DataFrame,
-    routes: List[Tuple[int, List[int]]],
-    trailer_starts: List[int],
-    trailers: List[Dict[str, Any]],  # <-- tipo mais preciso
-) -> List[int]:
+    routes: list[tuple[int, list[int]]],
+    trailer_starts: list[int],
+    trailers: list[dict[str, Any]],
+    dist_matrix: list[list[int]],  #  NOVO  ←
+) -> list[int]:
     """
     Guarda no banco as rotas otimizadas e suas paradas.
     Retorna os IDs das novas rotas persistidas.
     """
-    rota_ids: List[int] = []
+    rota_ids: list[int] = []
 
     for vehicle_id, path in routes:
         trailer = trailers[vehicle_id]
         start_idx = trailer_starts[vehicle_id]
 
+        # --- total_km -------------------------------------------------
+        km = 0
+        for a, b in zip(path, path[1:]):
+            km += dist_matrix[a][b]
+        km = int(round(km))  # opcional: arredondar
+
+        # --- total_ceu -----------------------------------------------
+        ceu = (
+            sum(df.ceu_int.iloc[node] for node in path if node < len(df)) / 10.0
+        )  # volta a ser float (ex.: 3.6 CEU)
+
+        # --------------------------------------------------------------
         # Criação da rota
         q_rota = await sess.execute(
             text(
                 """
-                INSERT INTO rota (data, trailer_id, origem_idx)
-                VALUES (:data, :trailer_id, :origem_idx)
+                INSERT INTO rota (data, trailer_id, origem_idx,
+                                  total_km, total_ceu)
+                VALUES (:data, :trailer_id, :origem_idx,
+                        :total_km, :total_ceu)
                 RETURNING id
                 """
             ),
@@ -40,6 +55,8 @@ async def persist_routes(
                 "data": dia,
                 "trailer_id": trailer["id"],
                 "origem_idx": start_idx,
+                "total_km": km,  # ← NOVO
+                "total_ceu": ceu,  # ← NOVO
             },
         )
         rota_id = q_rota.scalar()
