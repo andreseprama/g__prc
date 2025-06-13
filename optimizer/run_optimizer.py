@@ -198,6 +198,7 @@ async def optimize(
             depot_indices=starts,
             distance_matrix=dist_matrix,
             constraint_weights=weights,
+            enable_pickup_pairs=False,  # activa só o que precisares
         )
     except Exception as e:
         logger.exception(f"❌ Falha ao aplicar constraints: {e}")
