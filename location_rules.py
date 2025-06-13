@@ -69,30 +69,41 @@ def add_force_return_constraints(
     n_srv: int,
 ) -> None:
     """
-    Para cada serviço com force_return=True obriga o nó de entrega
-    a ser seguido imediatamente do End do veículo que o servir.
+    Para cada serviço com force_return=True obriga o nó de entrega (drop)
+    a fechar a rota do veículo que o transportar:
 
-        NextVar(drop) == Element(ends[], VehicleVar(drop))
+        (VehicleVar(drop) == v)  ⇒  (NextVar(drop) == End(v))
 
-    * Compatível com OR-Tools <= 9.7
-    * Cria 1 IntExpr por serviço (leve em memória)
+    Optimização:
+      • só cria booleans para veículos cujo End(v) está no domínio de NextVar
+      • nada de Element() nem listas gigantes – < 30 k BoolVars no teu caso
     """
     solver = routing.solver()
-    ends = [routing.End(v) for v in range(routing.vehicles())]
 
     for i in range(n_srv):
         if not df["force_return"].iat[i]:
             continue
 
         drop = manager.NodeToIndex(i + n_srv)
-        if drop < 0:  # pode ter sido removido por disjunção
-            continue
+        if drop < 0:
+            continue  # nó já removido
 
         next_var = routing.NextVar(drop)
         vehicle_var = routing.VehicleVar(drop)
-        end_expr = solver.Element(ends, vehicle_var)  # End(vehicle)
 
-        solver.Add(next_var == end_expr)
+        # para cada veículo possível do 'drop'
+        for v in range(routing.vehicles()):
+            end_v = routing.End(v)
+
+            # só se o sucessor 'end_v' faz parte do domínio de next_var
+            if not next_var.Contains(end_v):
+                continue
+
+            b_vehicle = solver.IsEqualCstVar(vehicle_var, v)  # 0/1
+            b_nextend = solver.IsEqualCstVar(next_var, end_v)  # 0/1
+
+            # implicação: b_vehicle ⇒ b_nextend   (uso da desigualdade)
+            solver.Add(b_vehicle <= b_nextend)
 
         logger.debug(
             "🔁 Forçando retorno: serviço %d (drop node %d) termina a rota",
