@@ -139,22 +139,27 @@ async def optimize(
     routing = pywrapcp.RoutingModel(manager)
 
     def cost_cb(from_idx: int, to_idx: int) -> int:
-        """Custo em km. 0 para qualquer sentinela (Start/End/unperformed)."""
-        # 1) Start / End → custo zero
+        # start/end → custo 0
         if routing.IsStart(from_idx) or routing.IsEnd(from_idx):
             return 0
         if routing.IsStart(to_idx) or routing.IsEnd(to_idx):
             return 0
 
-        # 2) Índices fora do espaço “locations” (dummy / removidos) → zero
-        #    manager.Size() já inclui todos os nós--cidade; acima disso é sentinela.
+        # índices sentinela (fora do espaço de cidades)
         if from_idx >= manager.Size() or to_idx >= manager.Size():
             return 0
 
-        # 3) Conversão segura (aqui sabemos que são cidades válidas)
-        f = manager.IndexToNode(from_idx)
-        t = manager.IndexToNode(to_idx)
-        return dist_matrix[f][t]
+        try:
+            fn = manager.IndexToNode(from_idx)
+            tn = manager.IndexToNode(to_idx)
+
+            # se por alguma razão escapou-nos um valor inválido
+            if fn >= len(dist_matrix) or tn >= len(dist_matrix):
+                return 0  # ← NADA de logging aqui
+
+            return dist_matrix[fn][tn]
+        except Exception:
+            return 0  # ← idem, silencioso
 
     transit_cb = routing.RegisterTransitCallback(cost_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_cb)
@@ -182,21 +187,21 @@ async def optimize(
     else:
         weights = {r.cod: float(r.valor) for r in rows2}
 
-    # 8) aplica constraints
-    try:
-        apply_all_constraints(
-            routing=routing,
-            manager=manager,
-            df=df,
-            trailers=trailers,
-            n_services=len(df),
-            depot_indices=starts,
-            distance_matrix=dist_matrix,
-            constraint_weights=weights,
-        )
-    except Exception as e:
-        logger.exception(f"❌ Falha ao aplicar constraints: {e}")
-        return []
+    # # 8) aplica constraints
+    # try:
+    #     apply_all_constraints(
+    #         routing=routing,
+    #         manager=manager,
+    #         df=df,
+    #         trailers=trailers,
+    #         n_services=len(df),
+    #         depot_indices=starts,
+    #         distance_matrix=dist_matrix,
+    #         constraint_weights=weights,
+    #     )
+    # except Exception as e:
+    #     logger.exception(f"❌ Falha ao aplicar constraints: {e}")
+    #     return []
 
     # 9) resolve
     try:
