@@ -1,3 +1,4 @@
+# backend/solver/optimizer/constraints.py
 from ortools.constraint_solver import pywrapcp
 import pandas as pd
 from typing import List
@@ -9,6 +10,7 @@ from backend.solver.routing import (
 )
 from backend.solver.callbacks.interno_penalty import interno_penalties
 from backend.solver.location_rules import add_force_return_constraints
+from backend.solver.utils import norm
 
 
 def apply_all_constraints(
@@ -20,30 +22,28 @@ def apply_all_constraints(
     depot_indices: List[int],
     distance_matrix: List[List[int]],
     constraint_weights: dict[str, float],
-):
+) -> None:
     """
     Aplica todas as restrições e penalizações ao modelo de roteamento.
-
-    :param routing: Modelo de roteamento OR-Tools
-    :param manager: Gerenciador de índices OR-Tools
-    :param df: DataFrame com os serviços
-    :param trailers: Lista de trailers ativos
-    :param n_services: Quantidade de serviços (pickup/delivery)
-    :param depot_indices: Índices de início/fim de cada trailer
-    :param distance_matrix: Matriz de distâncias entre cidades
-    :param constraint_weights: Dicionário com os pesos das penalizações
     """
 
-    # 🧮 Callback de demanda (CEU, FURG, RODADO, etc.)
+    # 🧮 Dimensões de capacidade e demais constraints
     demand_callbacks = create_demand_callbacks(df, manager, routing, depot_indices)
     add_dimensions_and_constraints(routing, trailers, demand_callbacks)
 
-    # 🚚 Penalização para serviços internos (mesma cidade)
+    # 🚚 Penalização para serviços "internos" (mesma cidade)
+    low_prio_ids: list[int] = [
+        i
+        for i in range(len(df))
+        if norm(df.load_city_description.iat[i])
+        == norm(df.unload_city_description.iat[i])
+    ]
     interno_penalties(
-        routing,
-        manager,
-        df,
-        low_penalty=int(constraint_weights.get("INTERNO_LOW_PEN", 10)),
+        routing=routing,
+        manager=manager,
+        pickup_ids=low_prio_ids,
+        n_srv=len(df),
+        weight=int(constraint_weights.get("INTERNO_LOW_PEN", 1000)),
     )
 
     # 📏 Penalização de distância + limite máximo por trailer
@@ -56,5 +56,10 @@ def apply_all_constraints(
         dist_matrix=distance_matrix,
     )
 
-    # 🔁 Força retorno à base se necessário (base definida para a cidade de entrega)
-    add_force_return_constraints(routing, manager, df, n_srv=n_services)
+    # 🔁 Força retorno à base (para serviços marcados)
+    add_force_return_constraints(
+        routing=routing,
+        manager=manager,
+        df=df,
+        n_srv=n_services,
+    )

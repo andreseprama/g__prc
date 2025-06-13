@@ -1,103 +1,100 @@
-# backend/solver/location_rules.py
+"""
+Regras para mapear cidades-base e forçar retorno dos serviços.
+Compatível com OR-Tools 9.7 (não usa SetAllowedTransitEdgesForNode).
+"""
 
-from typing import Dict, Any, List
+from typing import Dict
+import logging
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.solver.utils import norm
 from ortools.constraint_solver import pywrapcp
-import logging
+from backend.solver.utils import norm
+
+logger = logging.getLogger(__name__)
 
 
+# ───────────────────────── helpers BD ──────────────────────────────────────────
 async def fetch_city_base_map(sess: AsyncSession) -> Dict[str, str]:
-    """
-    Retorna dicionário {cidade_normalizada: base_normalizada}
-    baseado em rule_return_city.
-    """
     q = await sess.execute(
         text(
             """
             SELECT city_norm, base_norm
-            FROM rule_return_city
-            WHERE base_norm IS NOT NULL
+              FROM rule_return_city
+             WHERE base_norm IS NOT NULL
             """
         )
     )
-    return {row.city_norm: row.base_norm for row in q}
+    return {r.city_norm: r.base_norm for r in q}
 
 
+# ───────────────────── rewrites P8 / P9 ────────────────────────────────────────
 async def rewrite_load_city_if_return(df: pd.DataFrame, sess: AsyncSession) -> None:
-    """
-    Para linhas com load_city ∈ cidades retornáveis e trailer ∈ P8/P9,
-    reescreve a cidade de carga para base associada.
-    Também preserva coluna original em orig_load_city.
-    """
     city_to_base = await fetch_city_base_map(sess)
 
-    def override_city(row: pd.Series) -> str:
+    def override(row: pd.Series) -> str:
         trailer = str(row.get("vehicle_category_name", "")).upper()
-        current_city = str(row.get("load_city", ""))
-        if trailer.startswith("P8") or trailer.startswith("P9"):
-            return city_to_base.get(norm(current_city), current_city)
-        return current_city
+        cur = str(row.get("load_city", ""))
+        return (
+            city_to_base.get(norm(cur), cur)
+            if trailer.startswith(("P8", "P9"))
+            else cur
+        )
 
     df["orig_load_city"] = df["load_city"]
-    df["load_city"] = df.apply(override_city, axis=1)
+    df["load_city"] = df.apply(override, axis=1)
 
 
 async def rewrite_unload_city_if_return(df: pd.DataFrame, sess: AsyncSession) -> None:
-    """
-    Para linhas com unload_city ∈ cidades retornáveis e trailer ∈ P8/P9,
-    reescreve a cidade de descarga para base associada.
-    Também preserva coluna original em orig_unload_city.
-    """
     city_to_base = await fetch_city_base_map(sess)
 
-    def override_city(row: pd.Series) -> str:
+    def override(row: pd.Series) -> str:
         trailer = str(row.get("vehicle_category_name", "")).upper()
-        current_city = str(row.get("unload_city", ""))
-        if trailer.startswith("P8") or trailer.startswith("P9"):
-            return city_to_base.get(norm(current_city), current_city)
-        return current_city
+        cur = str(row.get("unload_city", ""))
+        return (
+            city_to_base.get(norm(cur), cur)
+            if trailer.startswith(("P8", "P9"))
+            else cur
+        )
 
     df["orig_unload_city"] = df["unload_city"]
-    df["unload_city"] = df.apply(override_city, axis=1)
+    df["unload_city"] = df.apply(override, axis=1)
 
 
+# ─────────────────── força retorno com Element() ──────────────────────────────
 def add_force_return_constraints(
     routing: pywrapcp.RoutingModel,
     manager: pywrapcp.RoutingIndexManager,
     df: pd.DataFrame,
     n_srv: int,
-):
+) -> None:
+    """
+    Para cada serviço com force_return=True obriga o nó de entrega
+    a ser seguido imediatamente do End do veículo que o servir.
+
+        NextVar(drop) == Element(ends[], VehicleVar(drop))
+
+    * Compatível com OR-Tools <= 9.7
+    * Cria 1 IntExpr por serviço (leve em memória)
+    """
     solver = routing.solver()
+    ends = [routing.End(v) for v in range(routing.vehicles())]
 
     for i in range(n_srv):
         if not df["force_return"].iat[i]:
             continue
 
         drop = manager.NodeToIndex(i + n_srv)
-        if drop < 0:  # nó removido por disjunção
+        if drop < 0:  # pode ter sido removido por disjunção
             continue
 
         next_var = routing.NextVar(drop)
-        if next_var is None:  # OR-Tools não criou var p/ este nó
-            continue
+        vehicle_var = routing.VehicleVar(drop)
+        end_expr = solver.Element(ends, vehicle_var)  # End(vehicle)
 
-        for v in range(routing.vehicles()):
-            end_v = routing.End(v)
-            if end_v < 0:  # veículo inexistente (defensivo)
-                continue
-            if not next_var.Contains(end_v):
-                continue  # end_v fora do domínio
+        solver.Add(next_var == end_expr)
 
-            b_vehicle = solver.IsEqualCstVar(routing.VehicleVar(drop), v)
-            b_nextend = solver.IsEqualCstVar(next_var, end_v)
-
-            # se b_vehicle == 1  ⇒  b_nextend == 1
-            solver.Add(b_vehicle <= b_nextend)
-
-        logging.debug(
+        logger.debug(
             "🔁 Forçando retorno: serviço %d (drop node %d) termina a rota",
             i,
             i + n_srv,
