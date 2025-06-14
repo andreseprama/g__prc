@@ -25,9 +25,7 @@ async def optimize(
     matricula: Optional[str] = None,
     categoria_filtrada: Optional[List[str]] = None,
 ) -> List[int]:
-    # ───────────────────────────────────────────────────────
     # 1) Carrega serviços + trailers
-    # ───────────────────────────────────────────────────────
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, matricula)
     if df.empty:
         logger.warning("⚠️ Nenhum serviço elegível.")
@@ -36,6 +34,7 @@ async def optimize(
         logger.warning("⚠️ Nenhum trailer activo.")
         return []
 
+    # opcional: filtrar por categoria
     if categoria_filtrada:
         from .trailer_routing import filter_services_by_category
 
@@ -44,12 +43,12 @@ async def optimize(
             logger.warning("⚠️ Nenhum serviço após filtro.")
             return []
 
-    # 2 nós por serviço: 1 depósito fictício + pickups + deliveries
+    # 2) Prepara VRP capacity‐only com pickup+delivery
     n_srv = len(df)
     n_veh = len(trailers)
     depot = 0
 
-    # 1 nó de depósito + n_srv pickups + n_srv deliveries
+    # nó 0 = depósito; 1..n_srv = pickups; (1+n_srv)..(2*n_srv) = deliveries
     n_nodes = 1 + 2 * n_srv
     starts = [depot] * n_veh
     ends = [depot] * n_veh
@@ -57,38 +56,21 @@ async def optimize(
     manager = pywrapcp.RoutingIndexManager(n_nodes, n_veh, starts, ends)
     routing = pywrapcp.RoutingModel(manager)
 
-    # custo-arco neutro
-    zero_cb = routing.RegisterTransitCallback(lambda *_: 0)
+    # custo‐arco neutro
+    zero_cb = routing.RegisterTransitCallback(lambda i, j: 0)
     routing.SetArcCostEvaluatorOfAllVehicles(zero_cb)
 
-    # --- aqui, logo após criar routing e antes de resolver, adicione:
+    # pickup-delivery: mesmo veículo, pickup antes de delivery
     for i in range(n_srv):
-        # pickup em (1 + i), delivery em (1 + n_srv + i)
         p = manager.NodeToIndex(1 + i)
         d = manager.NodeToIndex(1 + n_srv + i)
         routing.AddPickupAndDelivery(p, d)
 
-    # custo-arco neutro
-    zero_cb = routing.RegisterTransitCallback(lambda *_: 0)
-    routing.SetArcCostEvaluatorOfAllVehicles(zero_cb)
-
-    # ───────────────────────────────────────────────────────
     # 3) Dimensões de capacidade (CEU / LIG / FUR / ROD)
-    # ───────────────────────────────────────────────────────
     demand_cbs = create_demand_callbacks(df, manager, routing, depot_indices=[depot])
     add_dimensions_and_constraints(routing, trailers, demand_cbs)
 
-    # ───────────────────────────────────────────────────────
-    # 4) Pares pickup-delivery (mesmo veículo, pickup ≺ delivery)
-    # ───────────────────────────────────────────────────────
-    for i in range(n_srv):
-        p = manager.NodeToIndex(1 + i)
-        d = manager.NodeToIndex(1 + n_srv + i)
-        routing.AddPickupAndDelivery(p, d)
-
-    # ───────────────────────────────────────────────────────
-    # 5) Resolve
-    # ───────────────────────────────────────────────────────
+    # 4) Resolve
     search = pywrapcp.DefaultRoutingSearchParameters()
     search.time_limit.seconds = 60
     search.first_solution_strategy = (
@@ -103,23 +85,21 @@ async def optimize(
         logger.warning("⚠️ Solver não encontrou solução.")
         return []
 
-    # ───────────────────────────────────────────────────────
-    # 6) Extrai rotas
-    # ───────────────────────────────────────────────────────
+    # 5) Extrai rotas (vehicle_id, [nós 0..2*n_srv-1])
     routes: list[tuple[int, list[int]]] = []
     for v in range(n_veh):
         idx = routing.Start(v)
         path: list[int] = []
         while not routing.IsEnd(idx):
             node = manager.IndexToNode(idx)
-            if node != depot:  # ignora o depósito
-                path.append(node - 1)  # converte para 0..2*n_srv-1
+            if node != depot:
+                # converte 1..2*n_srv → 0..2*n_srv-1
+                path.append(node - 1)
             idx = solution.Value(routing.NextVar(idx))
-        routes.append((v, path))
+        if path:
+            routes.append((v, path))
 
-    # ───────────────────────────────────────────────────────
-    # 7) Persiste (km = 0, CEU calculado no persist)
-    # ───────────────────────────────────────────────────────
+    # 6) Persiste (total_km=0, total_ceu calculado internamente)
     rota_ids = await persist_routes(
         sess,
         dia,
@@ -127,8 +107,6 @@ async def optimize(
         routes,
         trailer_starts=[depot] * n_veh,
         trailers=trailers,
-        # dist_matrix=None,  # km = 0
-        # city_idx=None,  # não usado
     )
     logger.info("✅ %s rotas persistidas.", len(rota_ids))
     return rota_ids
