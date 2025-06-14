@@ -6,7 +6,17 @@ from datetime import date
 from typing import Optional, List, Tuple
 import faulthandler
 from sqlalchemy.ext.asyncio import AsyncSession
+import faulthandler
+import ortools
 
+print("== OR-Tools version:", ortools.__version__)
+import sysconfig
+
+print(
+    "== Python ABI:",
+    sysconfig.get_config_var("Py_DEBUG"),
+    sysconfig.get_config_var("WITH_PYMALLOC"),
+)
 # OR-Tools
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
@@ -19,7 +29,7 @@ from backend.solver.routing import (
 from .persist_results import persist_routes
 
 logger = logging.getLogger(__name__)
-faulthandler.enable(all_threads=True)
+faulthandler.enable(all_threads=True, file=open("/app/faulthandler.log", "w"))
 
 
 async def optimize(
