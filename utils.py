@@ -16,57 +16,23 @@ logger = logging.getLogger(__name__)
 def extract_routes(
     routing: pywrapcp.RoutingModel,
     manager: pywrapcp.RoutingIndexManager,
-    solution: Any,
-    n_services: int = 0,
+    solution,
+    n_services: int,
     debug: bool = False,
 ) -> list[tuple[int, list[int]]]:
-    """
-    Extrai (vehicle_id, [service_indices]) de cada veículo, incluindo apenas
-    rotas que contenham pelo menos um pickup e uma delivery.
-    service_index é 0..n_services-1 para pickups, n_services..2*n_services-1 para deliveries.
-    """
-    rotas: list[tuple[int, list[int]]] = []
-    # descobre qual o node do "depósito"
-    depot_node = manager.IndexToNode(routing.Start(0))
-
-    for vehicle_id in range(routing.vehicles()):
-        index = routing.Start(vehicle_id)
-        raw: list[int] = []
-
-        # percorre toda a rota do veículo
-        while not routing.IsEnd(index):
-            node = manager.IndexToNode(index)
-            # ignora depósito e nodes fora do range de serviços
-            if node != depot_node and 1 <= node < 1 + 2 * n_services:
-                raw.append(node)
-            index = solution.Value(routing.NextVar(index))
-
-        # converte de [1..2*n_services] → [0..2*n_services-1]
-        path = [node - 1 for node in raw]
-
-        # verifica se há pelo menos um pickup e uma delivery
-        has_pickup = any(s < n_services for s in path)
-        has_delivery = any(s >= n_services for s in path)
-        if not (has_pickup and has_delivery):
-            continue
-
-        if debug:
-            logging.debug(f"Veículo {vehicle_id} raw path nodes: {raw}")
-            logging.debug(f"Veículo {vehicle_id} mapped path:    {path}")
-
-        # remove duplicações consecutivas
-        deduped: list[int] = []
-        prev = None
-        for s in path:
-            if s != prev:
-                deduped.append(s)
-                prev = s
-
-        if debug:
-            logging.debug(f"Veículo {vehicle_id} deduped path:   {deduped}")
-
-        rotas.append((vehicle_id, deduped))
-
+    rotas = []
+    for v in range(routing.vehicles()):
+        idx = routing.Start(v)
+        path = []
+        while not routing.IsEnd(idx):
+            node = manager.IndexToNode(idx)
+            # ignora o depósito fictício (0)
+            if node != 0:
+                # converte de 1..2*n_services para 0..2*n_services-1
+                path.append(node - 1)
+            idx = solution.Value(routing.NextVar(idx))
+        if path:
+            rotas.append((v, path))
     return rotas
 
 
