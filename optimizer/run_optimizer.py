@@ -47,6 +47,12 @@ async def optimize(
         df = df.head(3)
         trailers = trailers[:3]
 
+    if debug:
+        logger.debug("🔎 Serviços: %d", len(df))
+        logger.debug("🔎 Trailers: %d", len(trailers))
+        for i, t in enumerate(trailers):
+            logger.debug("  Trailer #%d: %s", i, t)
+
     n_srv = len(df)
     n_veh = len(trailers)
     depot = 0
@@ -77,15 +83,17 @@ async def optimize(
     for i in range(n_srv):
         p_idx = manager.NodeToIndex(1 + i)
         d_idx = manager.NodeToIndex(1 + n_srv + i)
-        print(f"[DEBUG] Adding pickup-delivery pair: p_idx={p_idx}, d_idx={d_idx}")
+        ceu_val = int(df.ceu_int.iat[i])
+        print(f"[DEBUG] Adding pickup-delivery pair: p_idx={p_idx}, d_idx={d_idx}, ceu={ceu_val}")
         if routing.IsStart(p_idx) or routing.IsEnd(p_idx):
             print(f"⚠️ p_idx inválido: {p_idx}")
             continue
         if routing.IsStart(d_idx) or routing.IsEnd(d_idx):
             print(f"⚠️ d_idx inválido: {d_idx}")
             continue
-        assert 0 <= p_idx < manager.GetNumberOfIndices(), f"p_idx fora do range: {p_idx}"
-        assert 0 <= d_idx < manager.GetNumberOfIndices(), f"d_idx fora do range: {d_idx}"
+        if not (0 <= p_idx < manager.GetNumberOfIndices()) or not (0 <= d_idx < manager.GetNumberOfIndices()):
+            print(f"❌ Índices inválidos: p_idx={p_idx}, d_idx={d_idx}")
+            continue
         routing.AddPickupAndDelivery(p_idx, d_idx)
         solver.Add(routing.VehicleVar(p_idx) == routing.VehicleVar(d_idx))
         solver.Add(ceu_dim.CumulVar(p_idx) <= ceu_dim.CumulVar(d_idx))
@@ -112,11 +120,20 @@ async def optimize(
         idx = routing.Start(v)
         path: List[int] = []
         while not routing.IsEnd(idx):
-            node = manager.IndexToNode(idx)
+            try:
+                if idx < 0 or idx >= manager.GetNumberOfIndices():
+                    logger.warning("⚠️ índice inválido: %s", idx)
+                    break
+                node = manager.IndexToNode(idx)
+            except Exception as e:
+                logger.error("⛔ erro IndexToNode idx=%s → %s", idx, e)
+                break
             if node != depot:
                 path.append(node - 1)
             idx = solution.Value(routing.NextVar(idx))
         if path:
+            logger.debug("🚚 Veículo %d assigned to serviços: %s", v, path)
+            logger.debug("     CEU total: %s", sum(df.ceu_int.iat[n % n_srv] for n in path if n < n_srv))
             routes.append((v, path))
 
     rota_ids = await persist_routes(sess, dia, df, routes, trailer_starts=starts, trailers=trailers)
