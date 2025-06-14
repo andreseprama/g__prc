@@ -20,6 +20,18 @@ faulthandler.enable()
 logger = logging.getLogger(__name__)
 
 
+def _get_ceu_capacities(trailers: List[dict]) -> List[int]:
+    capacities = []
+    for t in trailers:
+        if t.get("ceu_max") is not None:
+            capacities.append(int(float(t["ceu_max"]) * 10))
+        elif t.get("cat") and t["cat"].get("ceu_max") is not None:
+            capacities.append(int(float(t["cat"]["ceu_max"]) * 10))
+        else:
+            capacities.append(0)
+    return capacities
+
+
 async def optimize(
     sess: AsyncSession,
     dia: date,
@@ -75,9 +87,17 @@ async def optimize(
     routing.SetArcCostEvaluatorOfAllVehicles(cost_cb)
 
     demand_cbs = create_demand_callbacks(df, manager, routing, depot_indices=[depot])
-    add_dimensions_and_constraints(routing, trailers, demand_cbs)
+    ceu_caps = _get_ceu_capacities(trailers)
+    if debug:
+        logger.debug("📦 CEU capacities: %s", ceu_caps)
+
+    routing.AddDimensionWithVehicleCapacity(
+        demand_cbs["ceu"], 0, ceu_caps, True, "CEU"
+    )
 
     ceu_dim = routing.GetDimensionOrDie("CEU")
+    ceu_dim.SetGlobalSpanCostCoefficient(10000)
+
     solver = routing.solver()
 
     for i in range(n_srv):
@@ -91,9 +111,8 @@ async def optimize(
         if routing.IsStart(d_idx) or routing.IsEnd(d_idx):
             print(f"⚠️ d_idx inválido: {d_idx}")
             continue
-        if not (0 <= p_idx < manager.GetNumberOfIndices()) or not (0 <= d_idx < manager.GetNumberOfIndices()):
-            print(f"❌ Índices inválidos: p_idx={p_idx}, d_idx={d_idx}")
-            continue
+        assert 0 <= p_idx < manager.GetNumberOfIndices(), f"p_idx fora do range: {p_idx}"
+        assert 0 <= d_idx < manager.GetNumberOfIndices(), f"d_idx fora do range: {d_idx}"
         routing.AddPickupAndDelivery(p_idx, d_idx)
         solver.Add(routing.VehicleVar(p_idx) == routing.VehicleVar(d_idx))
         solver.Add(ceu_dim.CumulVar(p_idx) <= ceu_dim.CumulVar(d_idx))
@@ -115,22 +134,28 @@ async def optimize(
     if debug:
         logger.info("✅ Solver terminou em %d ms com %d nós explorados", solver.WallTime(), solver.Branches())
 
+    # 7) extrair rotas
     routes: List[Tuple[int, List[int]]] = []
     for v in range(n_veh):
         idx = routing.Start(v)
         path: List[int] = []
         while not routing.IsEnd(idx):
-            try:
-                if idx < 0 or idx >= manager.GetNumberOfIndices():
-                    logger.warning("⚠️ índice inválido: %s", idx)
-                    break
-                node = manager.IndexToNode(idx)
-            except Exception as e:
-                logger.error("⛔ erro IndexToNode idx=%s → %s", idx, e)
+            if idx < 0 or idx >= manager.GetNumberOfIndices():
+                logger.warning("⚠️ Índice inválido no path do veículo %d: idx=%s", v, idx)
                 break
+            try:
+                node = manager.IndexToNode(idx)
+            except OverflowError as e:
+                logger.error("⛔ Overflow em IndexToNode(idx=%s): %s", idx, e)
+                break
+            except Exception as e:
+                logger.error("⛔ Erro inesperado em IndexToNode(idx=%s): %s", idx, e)
+                break
+
             if node != depot:
                 path.append(node - 1)
             idx = solution.Value(routing.NextVar(idx))
+
         if path:
             logger.debug("🚚 Veículo %d assigned to serviços: %s", v, path)
             logger.debug("     CEU total: %s", sum(df.ceu_int.iat[n % n_srv] for n in path if n < n_srv))

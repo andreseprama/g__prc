@@ -23,13 +23,13 @@ def safe_dist_lookup(
     j_idx: int,
 ) -> int:
     try:
-        # ––––– protecções rápidas –––––
+        # Proteções rápidas
         if i_idx < 0 or j_idx < 0:
             return DEFAULT_PENALTY
-        if i_idx >= manager.Size() or j_idx >= manager.Size():  # 👈 NOVO
+        if i_idx >= manager.GetNumberOfIndices() or j_idx >= manager.GetNumberOfIndices():
             return 0  # start/end → 0 km (ou DEFAULT_PENALTY)
 
-        i = manager.IndexToNode(i_idx)  # já estamos seguros
+        i = manager.IndexToNode(i_idx)
         j = manager.IndexToNode(j_idx)
 
         if i >= len(dist_matrix) or j >= len(dist_matrix):
@@ -74,34 +74,44 @@ def create_demand_callbacks(
     manager: pywrapcp.RoutingIndexManager,
     routing: pywrapcp.RoutingModel,
     depot_indices: List[int],
-) -> Dict[str, int]:  # ← devolve índices (int)
+) -> Dict[str, int]:
     """
-    Devolve dicionário {nome_dimensão: callback_index}.
-    Cada callback lê directamente do DataFrame.
+    Cria callbacks para dimensões de capacidade com segurança.
     """
 
-    def mk_cb(kind: str) -> int:  # ← devolve **int**, não Callable
+    def mk_cb(kind: str) -> int:
         def demand(index: int) -> int:
-            node = manager.IndexToNode(index)
+            # Proteção básica contra índices fora do intervalo válido
+            try:
+                node = manager.IndexToNode(index)
+            except Exception as e:
+                logger.error("⛔ IndexToNode falhou index=%s: %s", index, e)
+                return 0
 
-            if node in depot_indices:  # depots têm 0 de carga
+            if node in depot_indices:
                 return 0
 
             pickup = node < len(df)
             base = node if pickup else node - len(df)
+
+            if base < 0 or base >= len(df):
+                logger.warning("⚠️ Base fora do intervalo: node=%s base=%s", node, base)
+                return 0
+
             cat = (df.vehicle_category_name.iat[base] or "").lower()
 
             if kind == "ceu":
                 return int(df.ceu_int.iat[base]) if pickup else 0
-            if kind == "lig":
+            elif kind == "lig":
                 return 0 if not pickup else (0 if "moto" in cat else 1)
-            if kind == "fur":
+            elif kind == "fur":
                 return 0 if not pickup else (1 if "furg" in cat else 0)
-            if kind == "rod":
+            elif kind == "rod":
                 return 0 if not pickup else (1 if "rodado" in cat else 0)
-            return 0
 
-        return routing.RegisterUnaryTransitCallback(demand)  # ← inteiro
+            return 0  # Fallback obrigatório
+
+        return routing.RegisterUnaryTransitCallback(demand)
 
     return {
         "ceu": mk_cb("ceu"),
