@@ -31,10 +31,9 @@ async def optimize(
         logger.warning("⚠️ Nenhum serviço elegível.")
         return []
     if not trailers:
-        logger.warning("⚠️ Nenhum trailer activo.")
+        logger.warning("⚠️ Nenhum trailer ativo.")
         return []
 
-    # opcional: filtrar por categoria
     if categoria_filtrada:
         from .trailer_routing import filter_services_by_category
 
@@ -43,49 +42,59 @@ async def optimize(
             logger.warning("⚠️ Nenhum serviço após filtro.")
             return []
 
-    # 2) Prepara VRP capacity‐only com pickup+delivery
+    # Parâmetros
     n_srv = len(df)
     n_veh = len(trailers)
     depot = 0
 
-    # nó 0 = depósito; 1..n_srv = pickups; (1+n_srv)..(2*n_srv) = deliveries
+    # Nós: 0=depósito, 1..n_srv=pickups, 1+n_srv..2*n_srv=deliveries
     n_nodes = 1 + 2 * n_srv
     starts = [depot] * n_veh
     ends = [depot] * n_veh
 
+    # Manager & Model
     manager = pywrapcp.RoutingIndexManager(n_nodes, n_veh, starts, ends)
     routing = pywrapcp.RoutingModel(manager)
 
-    # custo‐arco neutro
+    # 2) Custo‐arco neutro
     zero_cb = routing.RegisterTransitCallback(lambda i, j: 0)
     routing.SetArcCostEvaluatorOfAllVehicles(zero_cb)
 
-    # pickup-delivery: mesmo veículo, pickup antes de delivery
-    for i in range(n_srv):
-        p = manager.NodeToIndex(1 + i)
-        d = manager.NodeToIndex(1 + n_srv + i)
-        routing.AddPickupAndDelivery(p, d)
-
-    # 3) Dimensões de capacidade (CEU / LIG / FUR / ROD)
+    # 3) Dimensões de capacidade
     demand_cbs = create_demand_callbacks(df, manager, routing, depot_indices=[depot])
     add_dimensions_and_constraints(routing, trailers, demand_cbs)
 
-    # 4) Resolve
-    search = pywrapcp.DefaultRoutingSearchParameters()
-    search.time_limit.seconds = 60
-    search.first_solution_strategy = (
+    # 4) Pares Pickup & Delivery
+    # Usamos a dimensão "CEU" para impor precedência pickup ⪯ delivery
+    ceu_dim = "CEU"
+    ceu_dimension = routing.GetDimensionOrDie(ceu_dim)
+    for i in range(n_srv):
+        p_idx = manager.NodeToIndex(1 + i)
+        d_idx = manager.NodeToIndex(1 + n_srv + i)
+        routing.AddPickupAndDelivery(p_idx, d_idx)
+        # mesmo veículo
+        routing.solver().Add(routing.VehicleVar(p_idx) == routing.VehicleVar(d_idx))
+        # precedência pelo cumul da dimensão CEU
+        routing.solver().Add(
+            ceu_dimension.CumulVar(p_idx) <= ceu_dimension.CumulVar(d_idx)
+        )
+
+    # 5) Parâmetros de busca
+    search_params = pywrapcp.DefaultRoutingSearchParameters()
+    search_params.time_limit.seconds = 60
+    search_params.first_solution_strategy = (
         routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
     )
-    search.local_search_metaheuristic = (
+    search_params.local_search_metaheuristic = (
         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     )
 
-    solution = routing.SolveWithParameters(search)
+    solution = routing.SolveWithParameters(search_params)
     if solution is None:
         logger.warning("⚠️ Solver não encontrou solução.")
         return []
 
-    # 5) Extrai rotas (vehicle_id, [nós 0..2*n_srv-1])
+    # 6) Extrai rotas
     routes: list[tuple[int, list[int]]] = []
     for v in range(n_veh):
         idx = routing.Start(v)
@@ -93,13 +102,13 @@ async def optimize(
         while not routing.IsEnd(idx):
             node = manager.IndexToNode(idx)
             if node != depot:
-                # converte 1..2*n_srv → 0..2*n_srv-1
+                # mapeia de 1..2*n_srv para 0..2*n_srv-1
                 path.append(node - 1)
             idx = solution.Value(routing.NextVar(idx))
         if path:
             routes.append((v, path))
 
-    # 6) Persiste (total_km=0, total_ceu calculado internamente)
+    # 7) Persiste (km = 0, CEU calculado no persist)
     rota_ids = await persist_routes(
         sess,
         dia,
@@ -108,5 +117,5 @@ async def optimize(
         trailer_starts=[depot] * n_veh,
         trailers=trailers,
     )
-    logger.info("✅ %s rotas persistidas.", len(rota_ids))
+    logger.info("✅ %d rotas persistidas.", len(rota_ids))
     return rota_ids
