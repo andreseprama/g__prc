@@ -1,26 +1,42 @@
-# backend\solver\optimizer\rules.py
+# backend/solver/optimizer/rules.py
 import pandas as pd
-from typing import Callable
+from typing import Optional
 from backend.solver.utils import norm
+
+
+def _get_base_for_city(city: str, base_map: dict[str, str]) -> Optional[str]:
+    """
+    Normaliza o nome da cidade e devolve a base correspondente (ou None).
+    """
+    if not city:
+        return None
+    city_norm = norm(city)
+    return base_map.get(city_norm)
 
 
 def must_return_to_base(row: pd.Series, base_map: dict[str, str]) -> bool:
     """
-    Retorna True se a cidade de descarregamento implicar retorno obrigatório a uma base.
+    True se a unload_city implicar retorno obrigatório a uma base.
     """
-    unload_city_norm = norm(str(row.get("unload_city", "")))
-    return base_map.get(unload_city_norm) is not None
+    return _get_base_for_city(str(row.get("unload_city", "")), base_map) is not None
 
 
 def is_base_location(city: str, base_map: dict[str, str]) -> bool:
     """
-    Verifica se uma cidade corresponde a uma base, segundo o mapeamento normalizado.
+    True se a cidade for exatamente uma base.
     """
-    if not isinstance(city, str):
-        return False
-    city_norm = norm(city)
-    expected_base = base_map.get(city_norm)
-    return expected_base == city_norm
+    return _get_base_for_city(city, base_map) == norm(city or "")
+
+
+def get_scheduled_base(row: pd.Series, base_map: dict[str, str]) -> Optional[str]:
+    """
+    Retorna a base agendada (load ou unload), escolhendo a load se existir,
+    senão a unload, senão None.
+    """
+    load = _get_base_for_city(str(row.get("load_city", "")), base_map)
+    if load:
+        return load
+    return _get_base_for_city(str(row.get("unload_city", "")), base_map)
 
 
 def flag_return_and_base_fields(
@@ -28,19 +44,16 @@ def flag_return_and_base_fields(
 ) -> pd.DataFrame:
     """
     Adiciona colunas:
-      - `force_return`: se a descarga está numa cidade com base
-      - `load_is_base`: se o pickup está numa cidade de base
-      - `unload_is_base`: se o drop-off está numa cidade de base
+      - force_return: unload_city exige retorno a base?
+      - load_is_base: load_city é base?
+      - unload_is_base: unload_city é base?
     """
     df = df.copy()
-
-    df["force_return"] = df.apply(
-        lambda row: must_return_to_base(row, base_map), axis=1
+    df["force_return"] = df.apply(lambda r: must_return_to_base(r, base_map), axis=1)
+    df["load_is_base"] = (
+        df["load_city"].astype(str).apply(lambda c: is_base_location(c, base_map))
     )
-
-    df["load_is_base"] = df["load_city"].apply(lambda c: is_base_location(c, base_map))
-    df["unload_is_base"] = df["unload_city"].apply(
-        lambda c: is_base_location(c, base_map)
+    df["unload_is_base"] = (
+        df["unload_city"].astype(str).apply(lambda c: is_base_location(c, base_map))
     )
-
     return df
