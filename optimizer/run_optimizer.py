@@ -25,6 +25,8 @@ async def optimize(
     dia: date,
     matricula: Optional[str] = None,
     categoria_filtrada: Optional[List[str]] = None,
+    debug: bool = False,
+    safe: bool = False,
 ) -> List[int]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, matricula)
     if df.empty:
@@ -40,6 +42,10 @@ async def optimize(
         if df.empty:
             logger.warning("⚠️ Nenhum serviço após filtro de categoria.")
             return []
+
+    if safe:
+        df = df.head(3)
+        trailers = trailers[:3]
 
     n_srv = len(df)
     n_veh = len(trailers)
@@ -72,6 +78,12 @@ async def optimize(
         p_idx = manager.NodeToIndex(1 + i)
         d_idx = manager.NodeToIndex(1 + n_srv + i)
         print(f"[DEBUG] Adding pickup-delivery pair: p_idx={p_idx}, d_idx={d_idx}")
+        if routing.IsStart(p_idx) or routing.IsEnd(p_idx):
+            print(f"⚠️ p_idx inválido: {p_idx}")
+            continue
+        if routing.IsStart(d_idx) or routing.IsEnd(d_idx):
+            print(f"⚠️ d_idx inválido: {d_idx}")
+            continue
         assert 0 <= p_idx < manager.GetNumberOfIndices(), f"p_idx fora do range: {p_idx}"
         assert 0 <= d_idx < manager.GetNumberOfIndices(), f"d_idx fora do range: {d_idx}"
         routing.AddPickupAndDelivery(p_idx, d_idx)
@@ -80,14 +92,20 @@ async def optimize(
 
     search = pywrapcp.DefaultRoutingSearchParameters()
     search.time_limit.seconds = 30
-    search.log_search = True
-    search.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    search.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+    search.log_search = debug
+    search.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.SAVINGS
+    search.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.AUTOMATIC
 
     solution = routing.SolveWithParameters(search)
     if solution is None:
-        logger.warning("⚠️ Nenhuma solução viável encontrada.")
+        logger.warning("❌ Nenhuma solução encontrada.")
+        if debug:
+            with open("model_debug_info.txt", "w") as f:
+                f.write(f"[INFO] No solution. n_srv={n_srv}, n_veh={n_veh}, constraints=approx {solver.Constraints()}\n")
         return []
+
+    if debug:
+        logger.info("✅ Solver terminou em %d ms com %d nós explorados", solver.WallTime(), solver.Branches())
 
     routes: List[Tuple[int, List[int]]] = []
     for v in range(n_veh):
