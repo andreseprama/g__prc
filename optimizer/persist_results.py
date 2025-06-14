@@ -20,6 +20,7 @@ async def persist_routes(
     Guarda as rotas optimizadas **sem** distâncias:
       • total_km = 0
       • total_ceu = soma dos pickups / 10
+      • impede associação de um mesmo service_id a múltiplos trailers
     """
     rota_ids: List[int] = []
     n_srv = len(df)
@@ -46,12 +47,38 @@ async def persist_routes(
             continue
         rota_ids.append(rota_id)
 
-        # Insere paragens
+        # Insere paragens, com verificação de colisão e trailer único
         for ordem, node in enumerate(path):
             is_pickup = node < n_srv
             base_idx = node if is_pickup else node - n_srv
             service_id = int(df.iloc[base_idx]["id"])
             node_type = "PICKUP" if is_pickup else "DELIVERY"
+
+            # Verifica se o service_id já foi associado a outro trailer
+q_check = await sess.execute(
+    text("""
+        SELECT r.trailer_id, rp.node_type
+        FROM rota_parada rp
+        JOIN rota r ON r.id = rp.rota_id
+        WHERE rp.service_id = :sid
+        LIMIT 1
+    """),
+    {"sid": service_id},
+)
+row = q_check.first()
+if row is not None:
+    trailer_existente_id, tipo_existente = row
+    if trailer_existente_id != trailer["id"]:
+        logger.warning(
+            f"🚫 Ignorado service_id={service_id}: já associado ao trailer_id={trailer_existente_id}, atual={trailer['id']}"
+        )
+        continue
+    elif tipo_existente == node_type:
+        logger.warning(
+            f"⚠️ Ignorado service_id duplicado: {service_id} já tem paragem {node_type} associada."
+        )
+        continue
+
             await sess.execute(
                 text(
                     """
