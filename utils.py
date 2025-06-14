@@ -19,26 +19,45 @@ def extract_routes(
     solution: Any,
     n_services: int = 0,
     debug: bool = False,
-) -> list[tuple[int, list[int]]]:
+) -> List[Tuple[int, List[int]]]:
     """
-    Extrai (vehicle_id, [nós]) sem duplicar nem rotas vazias.
+    Extrai para cada veículo (vehicle_id, [lista de nós visitados]),
+    incluindo pickups (0..n_services-1) e deliveries (n_services..2*n_services-1).
+    Retorna apenas rotas não vazias, sem duplicações.
     """
-    rotas: list[tuple[int, list[int]]] = []
+    routes: List[Tuple[int, List[int]]] = []
 
-    for v in range(routing.vehicles()):
-        idx = routing.Start(v)
-        path: list[int] = []
+    for vehicle_id in range(routing.vehicles()):
+        index = routing.Start(vehicle_id)
+        path: List[int] = []
 
-        while not routing.IsEnd(idx):
-            node = manager.IndexToNode(idx)
-            if node < 2 * n_services:  # só serviços
+        # percorre até o End
+        while not routing.IsEnd(index):
+            node = manager.IndexToNode(index)
+            # só adiciona nós de serviço
+            if 0 <= node < 2 * n_services:
                 path.append(node)
-            idx = solution.Value(routing.NextVar(idx))
+            index = solution.Value(routing.NextVar(index))
 
-        if path:  # guarda apenas se tiver nós
-            rotas.append((v, path))
+        # opcional: imprimir para debug
+        if debug:
+            print(f"[DEBUG] Vehicle {vehicle_id} raw path: {path}")
 
-    return rotas
+        # só guarda se houver ao menos um pickup E ao menos um delivery
+        has_pickup = any(n < n_services for n in path)
+        has_delivery = any(n >= n_services for n in path)
+        if has_pickup or has_delivery:
+            # remove possíveis duplicações de nó contíguo (caso existam)
+            deduped = [path[0]]
+            for n in path[1:]:
+                if n != deduped[-1]:
+                    deduped.append(n)
+            routes.append((vehicle_id, deduped))
+
+            if debug:
+                print(f"[DEBUG] Vehicle {vehicle_id} cleaned path: {deduped}")
+
+    return routes
 
 
 def norm(texto: str) -> str:
