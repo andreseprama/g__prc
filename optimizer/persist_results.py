@@ -55,7 +55,12 @@ async def persist_routes(
             continue
 
         rota_ids.append(rota_id)
-        logger.info("📝 Rota %s criada (CEU=%.1f)", rota_id, ceu)
+        logger.info(
+            "📝 Rota %s criada para trailer %s (CEU=%s)",
+            +rota_id,
+            +trailer["registry"],  # ← matrícula do trailer
+            +ceu,
+        )
 
         # --- insere todas as paragens (pickup e delivery) -----
         for ordem, node in enumerate(path):

@@ -19,45 +19,41 @@ def extract_routes(
     solution: Any,
     n_services: int = 0,
     debug: bool = False,
-) -> List[Tuple[int, List[int]]]:
+) -> list[tuple[int, list[int]]]:
     """
-    Extrai para cada veículo (vehicle_id, [lista de nós visitados]),
-    incluindo pickups (0..n_services-1) e deliveries (n_services..2*n_services-1).
-    Retorna apenas rotas não vazias, sem duplicações.
+    Extrai a lista de tuplos (vehicle_id, [nós visitados]),
+    incluindo apenas caminhos que tenham pelo menos um pickup E um delivery.
     """
-    routes: List[Tuple[int, List[int]]] = []
+    rotas: list[tuple[int, list[int]]] = []
 
     for vehicle_id in range(routing.vehicles()):
         index = routing.Start(vehicle_id)
-        path: List[int] = []
+        path: list[int] = []
 
-        # percorre até o End
+        # percorre até ao final do veículo
         while not routing.IsEnd(index):
             node = manager.IndexToNode(index)
-            # só adiciona nós de serviço
-            if 0 <= node < 2 * n_services:
+            # só nos interessa se for serviço (pickup ou delivery)
+            if node < 2 * n_services:
                 path.append(node)
             index = solution.Value(routing.NextVar(index))
 
-        # opcional: imprimir para debug
-        if debug:
-            print(f"[DEBUG] Vehicle {vehicle_id} raw path: {path}")
-
-        # só guarda se houver ao menos um pickup E ao menos um delivery
+        # verifica se tem pickup E delivery
         has_pickup = any(n < n_services for n in path)
         has_delivery = any(n >= n_services for n in path)
-        if has_pickup or has_delivery:
-            # remove possíveis duplicações de nó contíguo (caso existam)
-            deduped = [path[0]]
-            for n in path[1:]:
-                if n != deduped[-1]:
-                    deduped.append(n)
-            routes.append((vehicle_id, deduped))
-
+        if has_pickup and has_delivery:
             if debug:
-                print(f"[DEBUG] Vehicle {vehicle_id} cleaned path: {deduped}")
+                logging.debug(f"→ Veículo {vehicle_id} path raw: {path}")
+            # opcional: eliminar duplicações consecutivas
+            deduped = [path[0]]
+            for nxt in path[1:]:
+                if nxt != deduped[-1]:
+                    deduped.append(nxt)
+            if debug:
+                logging.debug(f"→ Veículo {vehicle_id} path deduped: {deduped}")
+            rotas.append((vehicle_id, deduped))
 
-    return routes
+    return rotas
 
 
 def norm(texto: str) -> str:
