@@ -1,5 +1,3 @@
-# backend/solver/optimizer/prepare_input.py
-
 import logging
 from datetime import date
 from typing import Optional, Tuple, List, Dict
@@ -49,7 +47,7 @@ async def prepare_input_dataframe(
     # --- flags de retorno e base ---
     df = flag_return_and_base_fields(df, base_map)
 
-    # --- base agendada (usando list comprehension para evitar Pylance) ---
+    # --- base agendada (usando list comprehension para evitar problemas de tipo) ---
     df["scheduled_base"] = [
         get_scheduled_base(row, base_map) for _, row in df.iterrows()
     ]
@@ -83,9 +81,7 @@ async def _load_dataframe(
             campos->'unload_city'->>'description'  AS unload_city,
             campos->>'expected_delivery_date'       AS expected_delivery_date,
             campos->>'expected_delivery_date_manual'AS expected_delivery_date_manual,
-            campos->'vehicle_category'->>'name'     AS vehicle_category_name,
-            -- outros campos que você precise
-            NULL AS extra  -- placeholder se quiser adicionar mais
+            campos->'vehicle_category'->>'name'     AS vehicle_category_name
         FROM ids_monitorados
         WHERE
             campos->'state'->>'id' IN ('P','PA','A','S','AM')
@@ -106,7 +102,6 @@ async def _load_dataframe(
         return None
 
     df = pd.DataFrame(rows, columns=list(result.keys()))
-
     df["expected_delivery_date"] = pd.to_datetime(df["expected_delivery_date"])
     df["expected_delivery_date_manual"] = pd.to_datetime(
         df["expected_delivery_date_manual"], errors="coerce"

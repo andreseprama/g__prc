@@ -1,4 +1,3 @@
-# backend/solver/optimizer/rules.py
 import pandas as pd
 from typing import Optional
 from backend.solver.utils import norm
