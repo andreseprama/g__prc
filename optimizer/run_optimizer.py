@@ -83,8 +83,70 @@ async def optimize(
         constraint_weights=weights,
         enable_interno=False,
         enable_force_return=False,
-        enable_pickup_pairs=False,
+        enable_pickup_pairs=True,
     )
+
+# -----------------------------------------------------------
+# 0)  Preparação dos dados
+# -----------------------------------------------------------
+n_srv = len(df)          # número de serviços      (pickups)
+n_veh = len(trailers)    # número de viaturas
+
+# -----------------------------------------------------------
+# 1)  Manager & RoutingModel (sem distâncias)
+#     • 2 nós por serviço  →  0..n_srv-1   = pickups
+#                           n_srv..2*n_srv-1 = deliveries
+#     • Todos os veículos arrancam/regressam ao “depósito 0”
+# -----------------------------------------------------------
+n_nodes   = 2 * n_srv
+starts    = [0] * n_veh
+ends      = [0] * n_veh
+
+manager = pywrapcp.RoutingIndexManager(n_nodes, n_veh, starts, ends)
+routing = pywrapcp.RoutingModel(manager)
+
+# -----------------------------------------------------------
+# 2)  Custo-arco neutro (tudo = 0)
+# -----------------------------------------------------------
+dummy_cb = routing.RegisterTransitCallback(lambda i, j: 0)
+routing.SetArcCostEvaluatorOfAllVehicles(dummy_cb)
+
+# -----------------------------------------------------------
+# 3)  Dimensões de capacidade
+#     (usa exactamente o que já tens em routing.create_demand_callbacks
+#      + routing.add_dimensions_and_constraints)
+# -----------------------------------------------------------
+depot_indices = [0]           # o “depósito” é o nó 0
+demand_cbs = create_demand_callbacks(df, manager, routing, depot_indices)
+add_dimensions_and_constraints(routing, trailers, demand_cbs)
+
+# -----------------------------------------------------------
+# 4)  Pares pickup-delivery
+# -----------------------------------------------------------
+for i in range(n_srv):
+    p = manager.NodeToIndex(i)
+    d = manager.NodeToIndex(i + n_srv)
+    routing.AddPickupAndDelivery(p, d)
+    # OR-Tools já garante:
+    #   • mesmo veículo
+    #   • pickup antes do delivery
+
+# -----------------------------------------------------------
+# 5)  Parâmetros de pesquisa e resolver
+# -----------------------------------------------------------
+from ortools.constraint_solver import routing_enums_pb2
+search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+search_parameters.time_limit.seconds = 60
+search_parameters.local_search_metaheuristic = (
+    routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+)
+
+solution = routing.SolveWithParameters(search_parameters)
+
+
+
+
+
 
     # ──────────────────────────────────────────────────────────
     # 4) solve
