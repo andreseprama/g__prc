@@ -114,19 +114,8 @@ async def optimize(
         cost_cb = routing.RegisterTransitCallback(_zero_cost)
         routing.SetArcCostEvaluatorOfAllVehicles(cost_cb)
 
-        cb_indices, demand_fns = create_demand_callbacks(df, manager, routing, depot_indices=[depot])
+        cb_indices, demand_fns = create_demand_callbacks(df_usado, manager, routing, depot_indices=[depot])
         ceu_caps = _get_ceu_capacities(trailers)
-
-        # if debug:
-        #     logger.warning("🧪 Verificação dos demand callbacks (ceu, lig, fur, rod):")
-        #     for kind, fn in demand_fns.items():
-        #         for idx in range(manager.GetNumberOfIndices()):
-        #             try:
-        #                 val = fn(idx)
-        #                 node = manager.IndexToNode(idx)
-        #                 logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
-        #             except Exception as e:
-        #                 logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
         routing.AddDimensionWithVehicleCapacity(cb_indices["ceu"], 0, ceu_caps, True, "CEU")
         ceu_dim = routing.GetDimensionOrDie("CEU")
@@ -137,7 +126,7 @@ async def optimize(
         for i in range(n_srv):
             p_idx = manager.NodeToIndex(1 + i)
             d_idx = manager.NodeToIndex(1 + n_srv + i)
-            ceu_val = int(df.ceu_int.iat[i])
+            ceu_val = int(df_usado.ceu_int.iat[i])
             if routing.IsStart(p_idx) or routing.IsEnd(p_idx):
                 continue
             if routing.IsStart(d_idx) or routing.IsEnd(d_idx):
@@ -188,10 +177,10 @@ async def optimize(
 
             if path:
                 logger.debug("🚚 Veículo %d assigned to serviços: %s", v, path)
-                logger.debug("     CEU total: %s", sum(df.ceu_int.iat[n % n_srv] for n in path if n < n_srv))
+                logger.debug("     CEU total: %s", sum(df_usado.ceu_int.iat[n % n_srv] for n in path if n < n_srv))
                 routes.append((v, path))
 
-        rota_ids = await persist_routes(sess, dia, df, routes, trailer_starts=starts, trailers=trailers)
+        rota_ids = await persist_routes(sess, dia, df_usado, routes, trailer_starts=starts, trailers=trailers)
         logger.info("✅ Rodada %d: %d rotas persistidas.", rodada, len(rota_ids))
         rota_ids_total.extend(rota_ids)
 
