@@ -28,10 +28,9 @@ def is_base_location(city: str, base_map: dict[str, str]) -> bool:
         logger.debug("🔎 is_base_location: cidade vazia")
         return False
 
-    norm_city = norm(city)
-    norm_bases = {norm(base) for base in base_map.values()}
-    logger.warning("🏙 check city='%s' norm='%s' in %s", city, norm_city, norm_bases)
-    return norm_city in norm_bases
+    city_norm = norm(city)
+    base_cities = set(base_map.keys())  # ← city_norms
+    return city_norm in base_cities
 
 
 def get_scheduled_base(row: pd.Series, base_map: dict[str, str]) -> Optional[str]:
