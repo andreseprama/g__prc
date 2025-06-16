@@ -44,7 +44,6 @@ async def optimize(
 ) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
 
-    # Validação de consistência do DataFrame e trailers
     expected_cols = {"ceu_int", "vehicle_category_name"}
     missing_cols = expected_cols - set(df.columns)
     if missing_cols:
@@ -73,23 +72,30 @@ async def optimize(
             return []
 
     # if safe:
+    #     logger.warning("🧪 SAFE MODE ATIVADO: limitando a 3 serviços e 3 trailers")
     #     df = df.head(3)
     #     trailers = trailers[:3]
 
     rota_ids_total = []
     rodada = 1
     df_restante = df
+    trailers_restantes = trailers
 
-    while not df_restante.empty and trailers and rodada <= max_voltas:
+    while not df_restante.empty and trailers_restantes and rodada <= max_voltas:
         logger.info("🔁 Rodada %d: %d serviços pendentes", rodada, len(df_restante))
-        df_usado, df_restante, trailers_usados = selecionar_servicos_e_trailers_compatíveis(df_restante, trailers)
+        df_usado, df_restante, trailers_usados = selecionar_servicos_e_trailers_compatíveis(df_restante, trailers_restantes)
 
         if df_usado.empty or not trailers_usados:
             logger.warning("⚠️ Nenhuma combinação viável encontrada na rodada %d.", rodada)
             break
 
-        trailers_restantes = [t for t in trailers if t not in trailers_usados]
-        trailers = trailers_restantes
+        # Atualiza trailers restantes removendo os usados
+        trailers_restantes = [t for t in trailers_restantes if t not in trailers_usados]
+        trailers = trailers_usados
+
+        if not trailers:
+            logger.warning("⚠️ Sem trailers restantes após rodada %d.", rodada)
+            break
 
         n_srv = len(df)
         n_veh = len(trailers)
