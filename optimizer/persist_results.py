@@ -49,7 +49,7 @@ async def persist_routes(
         )
         rota_id = q_rota.scalar()
         if rota_id is None:
-            logger.error("❌ Falha ao criar rota para trailer %s", trailer["registry"])
+            logger.error("❌ Falha ao criar rota para trailer %s", trailer["registry_trailer"])
             continue
 
         rota_ids.append(rota_id)

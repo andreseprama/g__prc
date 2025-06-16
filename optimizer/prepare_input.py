@@ -111,4 +111,6 @@ async def _load_dataframe(
     df["expected_delivery_date_manual"] = pd.to_datetime(
         df["expected_delivery_date_manual"], errors="coerce"
     )
+    df["load_city"] = df["load_city"].astype(str)
+    df["unload_city"] = df["unload_city"].astype(str)
     return df

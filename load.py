@@ -9,7 +9,7 @@ from sqlalchemy import text
 @dataclass
 class Trailer:
     id: int
-    registry: str = field(repr=False)
+    registry_trailer: str = field(repr=False)
     base_city: str = field(repr=False)
     trailer_cat: int
     ceu_max: float
@@ -27,7 +27,7 @@ async def load_trailers(sess: AsyncSession) -> List[Trailer]:
             """
             SELECT
                 t.id,
-                t.registry,
+                t.registry_trailer,
                 t.base_city,
                 tc.id AS trailer_cat,
                 tc.ceu_max,

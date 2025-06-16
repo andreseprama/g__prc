@@ -23,10 +23,15 @@ def must_return_to_base(row: pd.Series, base_map: dict[str, str]) -> bool:
     return _get_base_for_city(str(row.get("unload_city", "")), base_map) is not None
 
 def is_base_location(city: str, base_map: dict[str, str]) -> bool:
+    if not city:
+        logger.debug("🔎 is_base_location: cidade vazia")
+        return False
+
     norm_city = norm(city)
     norm_bases = {norm(base) for base in base_map.values()}
     logger.warning("🏙 check city='%s' norm='%s' in %s", city, norm_city, norm_bases)
     return norm_city in norm_bases
+
 
 def get_scheduled_base(row: pd.Series, base_map: dict[str, str]) -> Optional[str]:
     """
