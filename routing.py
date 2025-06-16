@@ -69,19 +69,21 @@ def build_routing_model(
 # ══════════════════════════════════════════════════════════════════════════════
 # 3.  DEMAND (capacidade) POR CATEGORIA
 # ══════════════════════════════════════════════════════════════════════════════
+# backend/solver/routing.py
+
 def create_demand_callbacks(
     df: pd.DataFrame,
     manager: pywrapcp.RoutingIndexManager,
     routing: pywrapcp.RoutingModel,
     depot_indices: List[int],
 ) -> Dict[str, int]:
-    callbacks: Dict[str, int] = {}
     demand_fns: Dict[str, Callable[[int], int]] = {}
 
     def build_demand(kind: str) -> Callable[[int], int]:
         def demand(index: int) -> int:
             if index < 0 or index >= manager.GetNumberOfIndices():
                 return 0
+
             try:
                 node = manager.IndexToNode(index)
             except Exception as e:
@@ -97,10 +99,21 @@ def create_demand_callbacks(
             if base < 0 or base >= len(df):
                 logger.debug("n_nodes = %s", manager.GetNumberOfNodes())
                 logger.debug("df.shape = %s", df.shape)
+
+                is_pickup = "pickup" if pickup else "delivery"
+                ceu_val = (
+                    df.at[base, "ceu_int"] if "ceu_int" in df.columns and 0 <= base < len(df) and pd.notna(df.at[base, "ceu_int"])
+                    else "N/A"
+                )
+                matricula = (
+                    str(df.at[base, "matricula"]) if "matricula" in df.columns and 0 <= base < len(df) else "N/A"
+                )
+
                 logger.warning("⚠️ Base fora do intervalo: node=%s base=%s", node, base)
-                logger.warning("⚠️ BASE inválido: node=%d base=%d len(df)=%d", node, base, len(df))
-                if 0 <= base < df.shape[0]:
-                    logger.warning("⚠️ CEU debug → df.ceu_int.iat[%s] = %s", base, df.ceu_int.iat[base])
+                logger.warning(
+                    "⚠️ BASE inválido: node=%d base=%d len(df)=%d [%s] matricula=%s ceu_int=%s",
+                    node, base, len(df), is_pickup, matricula, ceu_val,
+                )
                 return 0
 
             cat = (
@@ -108,12 +121,12 @@ def create_demand_callbacks(
                 if "vehicle_category_name" in df.columns and pd.notna(df.at[base, "vehicle_category_name"])
                 else ""
             )
-            logger.debug("📋 Tipo de viatura: node=%d base=%d → cat='%s'", node, base, cat)
-
             ceu_val = (
                 int(df.at[base, "ceu_int"]) if "ceu_int" in df.columns and pd.notna(df.at[base, "ceu_int"]) and pickup
                 else 0
             )
+
+            logger.debug("📋 Tipo de viatura: node=%d base=%d → cat='%s'", node, base, cat)
             logger.debug("📦 demand(): index=%d → node=%d base=%d ceu=%d", index, node, base, ceu_val)
 
             if kind == "ceu":
@@ -136,15 +149,11 @@ def create_demand_callbacks(
         return demand
 
     for kind in ["ceu", "lig", "fur", "rod"]:
-        fn = build_demand(kind)
-        cb = routing.RegisterUnaryTransitCallback(fn)
-        callbacks[kind] = cb
-        demand_fns[kind] = fn
+        demand_fns[kind] = build_demand(kind)
 
-    # Debug manual
     if __debug__:
-        logger.warning("🧪 Debug manual para demand callbacks:")
         for kind, fn in demand_fns.items():
+            logger.warning("🧪 Debug manual para callback %s", kind)
             for idx in range(manager.GetNumberOfIndices()):
                 try:
                     val = fn(idx)
@@ -153,7 +162,9 @@ def create_demand_callbacks(
                 except Exception as e:
                     logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
-    return callbacks
+    return {kind: routing.RegisterUnaryTransitCallback(fn) for kind, fn in demand_fns.items()}
+
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
