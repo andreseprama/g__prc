@@ -72,9 +72,9 @@ async def optimize(
             logger.warning("⚠️ Nenhum serviço após filtro de categoria.")
             return []
 
-    if safe:
-        df = df.head(3)
-        trailers = trailers[:3]
+    # if safe:
+    #     df = df.head(3)
+    #     trailers = trailers[:3]
 
     rota_ids_total = []
     rodada = 1
@@ -88,8 +88,8 @@ async def optimize(
             logger.warning("⚠️ Nenhuma combinação viável encontrada na rodada %d.", rodada)
             break
 
-        df = df_usado
-        trailers = trailers_usados
+        trailers_restantes = [t for t in trailers if t not in trailers_usados]
+        trailers = trailers_restantes
 
         n_srv = len(df)
         n_veh = len(trailers)
