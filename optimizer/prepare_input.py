@@ -50,6 +50,9 @@ async def prepare_input_dataframe(
 
     # --- flags de retorno e base ---
     df = flag_return_and_base_fields(df, base_map)
+    print("🔎 Bases detectadas:")
+    print(df[["matricula", "load_city", "unload_city", "load_is_base", "unload_is_base"]])
+
 
     # --- base agendada (usando list comprehension para evitar problemas de tipo) ---
     df["scheduled_base"] = [

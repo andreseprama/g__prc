@@ -1,3 +1,4 @@
+#backend/solver/optimizer/rules.py
 import pandas as pd
 from typing import Optional
 from backend.solver.utils import norm
@@ -53,6 +54,15 @@ def flag_return_and_base_fields(
       - unload_is_base: unload_city é base?
     """
     df = df.copy()
+
+    # Log se alguma cidade estiver vazia
+    empty_cities = df[df["load_city"].str.strip() == ""]
+    if not empty_cities.empty:
+        logging.warning("🚨 Entradas com load_city vazia detectadas:")
+        print("\U0001f6a8 Entradas com cidade vazia detectadas:")
+        print(empty_cities[["matricula", "load_city", "unload_city"]])
+
+    # Aplicar marcações de base
     df["force_return"] = df.apply(lambda r: must_return_to_base(r, base_map), axis=1)
     df["load_is_base"] = df["load_city"].astype(str).apply(
         lambda c: is_base_location(c, base_map)
@@ -60,4 +70,8 @@ def flag_return_and_base_fields(
     df["unload_is_base"] = df["unload_city"].astype(str).apply(
         lambda c: is_base_location(c, base_map)
     )
+
+    print("\U0001f50e Bases detectadas:")
+    print(df[["matricula", "load_city", "unload_city", "load_is_base", "unload_is_base"]])
+
     return df

@@ -43,6 +43,13 @@ def norm(texto: str) -> str:
         .decode()
         .upper()
         .strip()
+        .replace("Á", "A")
+        .replace("Ã", "A")
+        .replace("É", "E")
+        .replace("Í", "I")
+        .replace("Ó", "O")
+        .replace("Ú", "U")
+        .replace("Ç", "C")
     )
 
 
