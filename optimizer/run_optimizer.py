@@ -38,40 +38,49 @@ def _get_ceu_capacities(trailers: List[dict]) -> List[int]:
 async def run_optimizer_with_capacity_limit(
     sess: AsyncSession,
     dia: date,
-    df: pd.DataFrame,
-    trailers: List[dict],
-    *,
     registry_trailer: Optional[str] = None,
+    categoria_filtrada: Optional[List[str]] = None,
     debug: bool = False,
     safe: bool = False,
 ) -> dict:
+    df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
+    df = flag_return_and_base_fields(df, base_map)
 
-    df = flag_return_and_base_fields(df, base_map={})  # se necessário
+    if not trailers:
+        logger.warning("⚠️ Nenhum trailer activo.")
+        return {"rotas": [], "pendentes": df.to_dict("records")}
+
+    if categoria_filtrada:
+        from .trailer_routing import filter_services_by_category
+        df = filter_services_by_category(df, categoria_filtrada, base_map)
+        if df.empty:
+            logger.warning("⚠️ Nenhum serviço após filtro de categoria.")
+            return {"rotas": [], "pendentes": []}
+
     trailer_cap_total = sum(int(round(t["ceu_max"] * 10)) for t in trailers)
-
-    # Ordena carros por CEU decrescente (maiores ocupam mais)
     df = df.sort_values("ceu_int", ascending=False).reset_index(drop=True)
     df["ceu_cumsum"] = df["ceu_int"].cumsum()
-
-    # Seleciona carros que cabem no total dos trailers
-    df_ok = df[df["ceu_cumsum"] <= trailer_cap_total]
-    df_pendentes = df[df["ceu_cumsum"] > trailer_cap_total]
+    df_ok = df[df["ceu_cumsum"] <= trailer_cap_total].copy()
+    df_pendentes = df[df["ceu_cumsum"] > trailer_cap_total].copy()
 
     if df_ok.empty:
         logger.warning("❌ Nenhum veículo cabe na capacidade total dos trailers.")
         return {"rotas": [], "pendentes": df.to_dict("records")}
 
-    # Reutiliza sua função atual
-    result = await run_optimizer(
+    result = await optimize(
         sess=sess,
         dia=dia,
         registry_trailer=registry_trailer,
+        categoria_filtrada=None,
         debug=debug,
         safe=safe,
+        override_df=df_ok,
+        override_trailers=trailers,
     )
 
-    result["pendentes"] = df_pendentes.drop(columns=["ceu_cumsum"], errors="ignore").to_dict("records")
-    return result
+    result_dict = {"rotas": result if isinstance(result, list) else result[0]}
+    result_dict["pendentes"] = df_pendentes.drop(columns=["ceu_cumsum"], errors="ignore").to_dict("records")
+    return result_dict
 
 
 async def optimize(
