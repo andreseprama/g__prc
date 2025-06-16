@@ -1,7 +1,11 @@
 import pandas as pd
 from typing import Optional
 from backend.solver.utils import norm
+import logging
 
+
+
+logger = logging.getLogger(__name__)
 
 def _get_base_for_city(city: str, base_map: dict[str, str]) -> Optional[str]:
     """
@@ -12,20 +16,17 @@ def _get_base_for_city(city: str, base_map: dict[str, str]) -> Optional[str]:
     city_norm = norm(city)
     return base_map.get(city_norm)
 
-
 def must_return_to_base(row: pd.Series, base_map: dict[str, str]) -> bool:
     """
     True se a unload_city implicar retorno obrigatório a uma base.
     """
     return _get_base_for_city(str(row.get("unload_city", "")), base_map) is not None
 
-
 def is_base_location(city: str, base_map: dict[str, str]) -> bool:
-    """
-    True se a cidade for exatamente uma das bases (caso normalize para uma base_norm existente).
-    """
-    return norm(city) in {norm(base) for base in base_map.values()}
-
+    norm_city = norm(city)
+    norm_bases = {norm(base) for base in base_map.values()}
+    logger.warning("🏙 check city='%s' norm='%s' in %s", city, norm_city, norm_bases)
+    return norm_city in norm_bases
 
 def get_scheduled_base(row: pd.Series, base_map: dict[str, str]) -> Optional[str]:
     """
@@ -36,7 +37,6 @@ def get_scheduled_base(row: pd.Series, base_map: dict[str, str]) -> Optional[str
     if load:
         return load
     return _get_base_for_city(str(row.get("unload_city", "")), base_map)
-
 
 def flag_return_and_base_fields(
     df: pd.DataFrame, base_map: dict[str, str]
@@ -49,10 +49,10 @@ def flag_return_and_base_fields(
     """
     df = df.copy()
     df["force_return"] = df.apply(lambda r: must_return_to_base(r, base_map), axis=1)
-    df["load_is_base"] = (
-        df["load_city"].astype(str).apply(lambda c: is_base_location(c, base_map))
+    df["load_is_base"] = df["load_city"].astype(str).apply(
+        lambda c: is_base_location(c, base_map)
     )
-    df["unload_is_base"] = (
-        df["unload_city"].astype(str).apply(lambda c: is_base_location(c, base_map))
+    df["unload_is_base"] = df["unload_city"].astype(str).apply(
+        lambda c: is_base_location(c, base_map)
     )
     return df

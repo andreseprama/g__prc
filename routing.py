@@ -93,7 +93,13 @@ def create_demand_callbacks(
                 return 0
 
             pickup = node < len(df)
-            base = node if pickup else node - len(df)
+            n = len(df)
+            if node < n:
+                base = node
+            elif n <= node < 2 * n:
+                base = node - n
+            else:
+                base = -1  # inválido
 
             if base < 0 or base >= len(df):
                 log_base_invalid(df, node, base, pickup, kind)
@@ -138,7 +144,7 @@ def create_demand_callbacks(
                     node = manager.IndexToNode(idx)
                     logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
                 except Exception as e:
-                    logger.error("⛘️ Callback %s falhou para idx=%d: %s", kind, idx, e)
+                    logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
     return {kind: routing.RegisterUnaryTransitCallback(fn) for kind, fn in demand_fns.items()}
 
