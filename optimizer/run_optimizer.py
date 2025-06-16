@@ -9,7 +9,7 @@ import pandas as pd
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-from backend.solver.optimizer.rules import must_return_to_base, is_base_location
+from backend.solver.optimizer.rules import must_return_to_base, is_base_location, flag_return_and_base_fields
 
 from .prepare_input import prepare_input_dataframe
 from backend.solver.routing import (
@@ -43,6 +43,7 @@ async def optimize(
     safe: bool = False,
 ) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
+    df = flag_return_and_base_fields(df, base_map)
     logger.debug("🔎 Serviços: %d", len(df))  # ← esta linha deve estar aqui
     if df.empty:
         logger.warning("⚠️ Nenhum serviço elegível para %s", dia)

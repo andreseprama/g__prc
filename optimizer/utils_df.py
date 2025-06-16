@@ -4,8 +4,9 @@ from backend.solver.utils import norm
 
 
 def normalize_city_fields(df: pd.DataFrame) -> pd.DataFrame:
-    df["load_city"] = df.get("load_city_description", "")
-    df["unload_city"] = df.get("unload_city_description", "")
+    df = df.copy()
+    df["load_city"] = df["load_city"].apply(lambda x: norm(x) if pd.notnull(x) else "")
+    df["unload_city"] = df["unload_city"].apply(lambda x: norm(x) if pd.notnull(x) else "")
     return df
 
 
