@@ -94,20 +94,31 @@ def create_demand_callbacks(
             if base < 0 or base >= len(df):
                 logger.debug("n_nodes = %s", manager.GetNumberOfNodes())
                 logger.debug("df.shape = %s", df.shape)
-                logger.debug("n_trailers = %s", len(trailers))
                 logger.warning("⚠️ Base fora do intervalo: node=%s base=%s", node, base)
+                if 0 <= base < df.shape[0]:
+                    logger.warning("⚠️ CEU debug → df.ceu_int.iat[%s] = %s", base, df.ceu_int.iat[base])
                 return 0
 
             cat = (df.vehicle_category_name.iat[base] or "").lower()
+            ceu_val = int(df.ceu_int.iat[base]) if pickup else 0
+            logger.debug("📦 demand(): index=%d → node=%d base=%d ceu=%d", index, node, base, ceu_val)
 
             if kind == "ceu":
                 return int(df.ceu_int.iat[base]) if pickup else 0
             if kind == "lig":
-                return 0 if not pickup else (0 if "moto" in cat else 1)
+                val = 0 if not pickup else (0 if "moto" in cat else 1)
+                logger.debug("LIG: node=%s base=%s cat=%s → %s", node, base, cat, val)
+                return val
+
             if kind == "fur":
-                return 0 if not pickup else (1 if "furg" in cat else 0)
+                val = 0 if not pickup else (1 if "furg" in cat else 0)
+                logger.debug("FUR: node=%s base=%s cat=%s → %s", node, base, cat, val)
+                return val
+
             if kind == "rod":
-                return 0 if not pickup else (1 if "rodado" in cat else 0)
+                val = 0 if not pickup else (1 if "rodado" in cat else 0)
+                logger.debug("ROD: node=%s base=%s cat=%s → %s", node, base, cat, val)
+                return val
 
             return 0
 

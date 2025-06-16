@@ -41,6 +41,7 @@ async def optimize(
     safe: bool = False,
 ) -> List[int]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, matricula)
+    logger.debug("🔎 Serviços: %d", len(df))  # ← esta linha deve estar aqui
     if df.empty:
         logger.warning("⚠️ Nenhum serviço elegível para %s", dia)
         return []
@@ -60,9 +61,6 @@ async def optimize(
     #     trailers = trailers[:3]
 
     if debug:
-        logger.debug("n_nodes = %s", manager.GetNumberOfNodes())
-logger.debug("df.shape = %s", df.shape)
-logger.debug("n_trailers = %s", len(trailers))
         logger.debug("🔎 Serviços: %d", len(df))
         logger.debug("🔎 Trailers: %d", len(trailers))
         for i, t in enumerate(trailers):
