@@ -90,7 +90,15 @@ async def optimize(
     demand_cbs = create_demand_callbacks(df, manager, routing, depot_indices=[depot])
     ceu_caps = _get_ceu_capacities(trailers)
     if debug:
-        logger.debug("📦 CEU capacities: %s", ceu_caps)
+        logger.warning("🧪 Verificação dos demand callbacks (ceu, lig, fur, rod):")
+        for kind, cb in demand_cbs.items():
+            for idx in range(manager.GetNumberOfIndices()):
+                try:
+                    val = routing.CallbackOrDie(cb)(idx)
+                    node = manager.IndexToNode(idx)
+                    logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
+                except Exception as e:
+                    logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
     routing.AddDimensionWithVehicleCapacity(
         demand_cbs["ceu"], 0, ceu_caps, True, "CEU"
