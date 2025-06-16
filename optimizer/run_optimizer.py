@@ -9,7 +9,7 @@ import pandas as pd
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-from backend.solver.optimizer.rules import must_return_to_base, is_base_location, flag_return_and_base_fields
+from backend.solver.optimizer.rules import flag_return_and_base_fields
 
 from .prepare_input import prepare_input_dataframe
 from backend.solver.routing import (

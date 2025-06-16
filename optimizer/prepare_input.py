@@ -45,12 +45,12 @@ async def prepare_input_dataframe(
 
     # --- mapa de concelhos → base ---
     base_map = await fetch_city_base_map(sess)
-    logger.warning("🗺 base_map keys: %s", list(base_map.keys())[:10])
-    logger.warning("📍 norm(load_city): %s", norm(df['load_city'].iloc[1]))
+    # logger.warning("🗺 base_map keys: %s", list(base_map.keys())[:10])
+    # logger.warning("📍 norm(load_city): %s", norm(df['load_city'].iloc[1]))
 
     # --- flags de retorno e base ---
     df = flag_return_and_base_fields(df, base_map)
-    print("🔎 Bases detectadas:")
+    # print("🔎 Bases detectadas:")
     print(df[["matricula", "load_city", "unload_city", "load_is_base", "unload_is_base"]])
 
 
@@ -110,7 +110,6 @@ async def _load_dataframe(
         return None
 
     df = pd.DataFrame(rows, columns=list(result.keys()))
-    print(df[["matricula", "load_city", "unload_city"]].head(10))  # <-- Adiciona isto
     df["expected_delivery_date"] = pd.to_datetime(df["expected_delivery_date"])
     df["expected_delivery_date_manual"] = pd.to_datetime(
         df["expected_delivery_date_manual"], errors="coerce"

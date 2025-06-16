@@ -70,7 +70,7 @@ def flag_return_and_base_fields(
         lambda c: is_base_location(c, base_map)
     )
 
-    print("\U0001f50e Bases detectadas:")
-    print(df[["matricula", "load_city", "unload_city", "load_is_base", "unload_is_base"]])
+    # print("\U0001f50e Bases detectadas:")
+    # print(df[["matricula", "load_city", "unload_city", "load_is_base", "unload_is_base"]])
 
     return df
