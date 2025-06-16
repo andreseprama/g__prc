@@ -15,6 +15,7 @@ from .prepare_input import prepare_input_dataframe
 from backend.solver.routing import (
     create_demand_callbacks,
     add_dimensions_and_constraints,
+    selecionar_subconjunto_compativel
 )
 from .persist_results import persist_routes
 

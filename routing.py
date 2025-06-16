@@ -231,6 +231,35 @@ def add_dimensions_and_constraints(
             True,  # start cumul = 0
             name,
         )
+        
+        
+        
+def selecionar_subconjunto_compativel(df: pd.DataFrame, trailer_cap_ceu: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Seleciona o maior subconjunto de veículos cuja demanda CEU somada cabe na capacidade do trailer.
+
+    Retorna:
+      - df_ok: veículos a usar nesta volta
+      - df_pendentes: restantes
+    """
+    df = df.copy()
+    df = df.sort_values(by="ceu_int", ascending=False).reset_index(drop=True)
+
+    carga_total = 0
+    indices_ok = []
+
+    for i, row in df.iterrows():
+        ceu = int(row["ceu_int"])
+        if carga_total + ceu <= trailer_cap_ceu:
+            carga_total += ceu
+            indices_ok.append(i)
+        else:
+            break
+
+    df_ok = df.loc[indices_ok].reset_index(drop=True)
+    df_restante = df.drop(indices_ok).reset_index(drop=True)
+
+    return df_ok, df_restante        
 
 
 # ══════════════════════════════════════════════════════════════════════════════
