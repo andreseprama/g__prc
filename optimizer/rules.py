@@ -22,9 +22,9 @@ def must_return_to_base(row: pd.Series, base_map: dict[str, str]) -> bool:
 
 def is_base_location(city: str, base_map: dict[str, str]) -> bool:
     """
-    True se a cidade for exatamente uma base.
+    True se a cidade for exatamente uma das bases (caso normalize para uma base_norm existente).
     """
-    return _get_base_for_city(city, base_map) == norm(city or "")
+    return norm(city) in {norm(base) for base in base_map.values()}
 
 
 def get_scheduled_base(row: pd.Series, base_map: dict[str, str]) -> Optional[str]:
