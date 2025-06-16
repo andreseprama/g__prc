@@ -3,8 +3,9 @@
 from __future__ import annotations
 import logging
 from datetime import date
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Union
 import faulthandler
+import pandas as pd
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
@@ -39,7 +40,7 @@ async def optimize(
     categoria_filtrada: Optional[List[str]] = None,
     debug: bool = False,
     safe: bool = False,
-) -> List[int]:
+) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, matricula)
     logger.debug("🔎 Serviços: %d", len(df))  # ← esta linha deve estar aqui
     if df.empty:
@@ -174,4 +175,6 @@ async def optimize(
 
     rota_ids = await persist_routes(sess, dia, df, routes, trailer_starts=starts, trailers=trailers)
     logger.info("✅ %d rotas persistidas.", len(rota_ids))
+    if debug:
+        return rota_ids, df
     return rota_ids

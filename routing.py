@@ -134,12 +134,6 @@ def log_base_invalid(
 
 
 
-
-
-
-
-
-
 def create_demand_callbacks(
     df: pd.DataFrame,
     manager: pywrapcp.RoutingIndexManager,
