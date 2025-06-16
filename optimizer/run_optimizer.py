@@ -55,11 +55,14 @@ async def optimize(
             logger.warning("⚠️ Nenhum serviço após filtro de categoria.")
             return []
 
-    if safe:
-        df = df.head(3)
-        trailers = trailers[:3]
+    # if safe:
+    #     df = df.head(3)
+    #     trailers = trailers[:3]
 
     if debug:
+        logger.debug("n_nodes = %s", manager.GetNumberOfNodes())
+logger.debug("df.shape = %s", df.shape)
+logger.debug("n_trailers = %s", len(trailers))
         logger.debug("🔎 Serviços: %d", len(df))
         logger.debug("🔎 Trailers: %d", len(trailers))
         for i, t in enumerate(trailers):

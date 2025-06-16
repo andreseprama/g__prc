@@ -75,13 +75,10 @@ def create_demand_callbacks(
     routing: pywrapcp.RoutingModel,
     depot_indices: List[int],
 ) -> Dict[str, int]:
-    """
-    Cria callbacks para dimensões de capacidade com segurança.
-    """
-
     def mk_cb(kind: str) -> int:
         def demand(index: int) -> int:
-            # Proteção básica contra índices fora do intervalo válido
+            if index < 0 or index >= manager.GetNumberOfIndices():
+                return 0
             try:
                 node = manager.IndexToNode(index)
             except Exception as e:
@@ -95,6 +92,9 @@ def create_demand_callbacks(
             base = node if pickup else node - len(df)
 
             if base < 0 or base >= len(df):
+                logger.debug("n_nodes = %s", manager.GetNumberOfNodes())
+                logger.debug("df.shape = %s", df.shape)
+                logger.debug("n_trailers = %s", len(trailers))
                 logger.warning("⚠️ Base fora do intervalo: node=%s base=%s", node, base)
                 return 0
 
@@ -102,14 +102,14 @@ def create_demand_callbacks(
 
             if kind == "ceu":
                 return int(df.ceu_int.iat[base]) if pickup else 0
-            elif kind == "lig":
+            if kind == "lig":
                 return 0 if not pickup else (0 if "moto" in cat else 1)
-            elif kind == "fur":
+            if kind == "fur":
                 return 0 if not pickup else (1 if "furg" in cat else 0)
-            elif kind == "rod":
+            if kind == "rod":
                 return 0 if not pickup else (1 if "rodado" in cat else 0)
 
-            return 0  # Fallback obrigatório
+            return 0
 
         return routing.RegisterUnaryTransitCallback(demand)
 
