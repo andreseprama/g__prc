@@ -95,13 +95,14 @@ async def optimize(
     if debug:
         logger.warning("🧪 Verificação dos demand callbacks (ceu, lig, fur, rod):")
         for kind, cb in demand_cbs.items():
-            for idx in range(manager.GetNumberOfIndices()):
-                try:
-                    val = cb(idx)  # ← fix aqui
+            try:
+                fn = getattr(routing, "GetUnaryTransitCallback")(cb)
+                for idx in range(manager.GetNumberOfIndices()):
+                    val = fn(idx)
                     node = manager.IndexToNode(idx)
                     logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
-                except Exception as e:
-                    logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
+            except Exception as e:
+                logger.error("⛔ Callback %s falhou: %s", kind, e)
 
     routing.AddDimensionWithVehicleCapacity(
         demand_cbs["ceu"], 0, ceu_caps, True, "CEU"

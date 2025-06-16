@@ -76,7 +76,14 @@ def create_demand_callbacks(
     routing: pywrapcp.RoutingModel,
     depot_indices: List[int],
 ) -> Dict[str, int]:
+    """
+    Cria callbacks de demanda para diferentes tipos de capacidade (CEU, LIG, FUR, ROD).
+
+    Retorna um dicionário com chaves ['ceu', 'lig', 'fur', 'rod'] e seus respectivos 
+    callbacks registrados no modelo do OR-Tools.
+    """
     demand_fns: Dict[str, Callable[[int], int]] = {}
+    n = len(df)
 
     def build_demand(kind: str) -> Callable[[int], int]:
         def demand(index: int) -> int:
@@ -92,32 +99,27 @@ def create_demand_callbacks(
             if node in depot_indices:
                 return 0
 
-            pickup = node < len(df)
-            n = len(df)
-            if node < n:
-                base = node
-            elif n <= node < 2 * n:
-                base = node - n
-            else:
-                base = -1  # inválido
+            pickup = node < n
+            base = node if pickup else node - n
 
-            if base < 0 or base >= len(df):
-                log_base_invalid(df, node, base, pickup, kind)
+            if base < 0 or base >= n:
+                logger.error("⛔ base inválida: node=%s base=%s df_len=%d", node, base, len(df))
+                logger.warning(
+                    "⚠️ BASE inválido [%s]: node=%d base=%d df_len=%d df.index=%s kind=%s ceu_int=%s matricula=%s cat='%s'",
+                    "pickup" if pickup else "delivery",
+                    node,
+                    base,
+                    len(df),
+                    df.index[base] if 0 <= base < len(df.index) else "?",
+                    kind,
+                    df.at[base, "ceu_int"] if "ceu_int" in df.columns else "N/A",
+                    df.at[base, "matricula"] if "matricula" in df.columns else "N/A",
+                    df.at[base, "vehicle_category_name"] if "vehicle_category_name" in df.columns else "N/A",
+                )
                 return 0
 
-            cat = (
-                str(df.at[base, "vehicle_category_name"]).lower()
-                if "vehicle_category_name" in df.columns and pd.notna(df.at[base, "vehicle_category_name"])
-                else ""
-            )
-            ceu_val = (
-                int(df.at[base, "ceu_int"])
-                if "ceu_int" in df.columns and pd.notna(df.at[base, "ceu_int"]) and pickup
-                else 0
-            )
-
-            logger.debug("📋 Tipo de viatura: node=%d base=%d → cat='%s'", node, base, cat)
-            logger.debug("📦 demand(): index=%d → node=%d base=%d ceu=%d", index, node, base, ceu_val)
+            cat = str(df.at[base, "vehicle_category_name"]).lower() if pd.notna(df.at[base, "vehicle_category_name"]) else ""
+            ceu_val = int(df.at[base, "ceu_int"]) if pd.notna(df.at[base, "ceu_int"]) and pickup else 0
 
             if kind == "ceu":
                 return ceu_val
@@ -147,6 +149,7 @@ def create_demand_callbacks(
                     logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
     return {kind: routing.RegisterUnaryTransitCallback(fn) for kind, fn in demand_fns.items()}
+
 
 def log_base_invalid(
     df: pd.DataFrame,
