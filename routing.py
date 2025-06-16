@@ -261,6 +261,12 @@ def selecionar_subconjunto_compativel(df: pd.DataFrame, trailer_cap_ceu: int) ->
 
     return df_ok, df_restante        
 
+def selecionar_carros_que_cabem(df, trailers):
+    cap_total = soma de trailers[i]["ceu_max"] * 10
+    df_ordenado = df ordenado por ceu_int desc
+    df_ok = carros acumulando ceu_int <= cap_total
+    df_pendentes = df restantes
+    return df_ok, df_pendentes
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 5.  DISTÂNCIA COM PENALIZAÇÃO + LIMITE facultativo

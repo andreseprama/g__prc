@@ -18,7 +18,6 @@ from backend.solver.routing import (
     selecionar_subconjunto_compativel
 )
 from .persist_results import persist_routes
-
 faulthandler.enable()
 logger = logging.getLogger(__name__)
 
@@ -33,6 +32,46 @@ def _get_ceu_capacities(trailers: List[dict]) -> List[int]:
         else:
             capacities.append(0)
     return capacities
+
+
+
+async def run_optimizer_with_capacity_limit(
+    sess: AsyncSession,
+    dia: date,
+    df: pd.DataFrame,
+    trailers: List[dict],
+    *,
+    registry_trailer: Optional[str] = None,
+    debug: bool = False,
+    safe: bool = False,
+) -> dict:
+
+    df = flag_return_and_base_fields(df, base_map={})  # se necessário
+    trailer_cap_total = sum(int(round(t["ceu_max"] * 10)) for t in trailers)
+
+    # Ordena carros por CEU decrescente (maiores ocupam mais)
+    df = df.sort_values("ceu_int", ascending=False).reset_index(drop=True)
+    df["ceu_cumsum"] = df["ceu_int"].cumsum()
+
+    # Seleciona carros que cabem no total dos trailers
+    df_ok = df[df["ceu_cumsum"] <= trailer_cap_total]
+    df_pendentes = df[df["ceu_cumsum"] > trailer_cap_total]
+
+    if df_ok.empty:
+        logger.warning("❌ Nenhum veículo cabe na capacidade total dos trailers.")
+        return {"rotas": [], "pendentes": df.to_dict("records")}
+
+    # Reutiliza sua função atual
+    result = await run_optimizer(
+        sess=sess,
+        dia=dia,
+        registry_trailer=registry_trailer,
+        debug=debug,
+        safe=safe,
+    )
+
+    result["pendentes"] = df_pendentes.drop(columns=["ceu_cumsum"], errors="ignore").to_dict("records")
+    return result
 
 
 async def optimize(
