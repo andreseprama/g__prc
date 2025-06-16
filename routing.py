@@ -127,15 +127,15 @@ def create_demand_callbacks(
         demand_fns[kind] = fn
         cb_indices[kind] = routing.RegisterUnaryTransitCallback(fn)
 
-        if __debug__:
-            logger.warning("🧪 Debug manual para callback %s", kind)
-            for idx in range(manager.GetNumberOfIndices()):
-                try:
-                    val = fn(idx)
-                    node = manager.IndexToNode(idx)
-                    logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
-                except Exception as e:
-                    logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
+        # if __debug__:
+        #     logger.warning("🧪 Debug manual para callback %s", kind)
+        #     for idx in range(manager.GetNumberOfIndices()):
+        #         try:
+        #             val = fn(idx)
+        #             node = manager.IndexToNode(idx)
+        #             logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
+        #         except Exception as e:
+        #             logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
     return cb_indices, demand_fns
 

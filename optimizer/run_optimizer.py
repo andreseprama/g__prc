@@ -71,11 +71,6 @@ async def optimize(
             logger.warning("⚠️ Nenhum serviço após filtro de categoria.")
             return []
 
-    # if safe:
-    #     logger.warning("🧪 SAFE MODE ATIVADO: limitando a 3 serviços e 3 trailers")
-    #     df = df.head(3)
-    #     trailers = trailers[:3]
-
     rota_ids_total = []
     rodada = 1
     df_restante = df
@@ -85,19 +80,25 @@ async def optimize(
         logger.info("🔁 Rodada %d: %d serviços pendentes", rodada, len(df_restante))
         df_usado, df_restante, trailers_usados = selecionar_servicos_e_trailers_compatíveis(df_restante, trailers_restantes)
 
+        trailer_cap_ceu = max(_get_ceu_capacities(trailers_usados), default=0)
+        for i, row in df_usado.iterrows():
+            if int(row["ceu_int"]) > trailer_cap_ceu:
+                logger.error("❌ Serviço idx=%d excede capacidade trailer: ceu_int=%d > cap=%d", i, row["ceu_int"], trailer_cap_ceu)
+
+        logger.debug("📅 create_route input: %d serviços, %d trailers", len(df_usado), len(trailers_usados))
+        logger.debug("📜 Serviços: %s", df_usado[["matricula", "ceu_int"]].to_dict(orient="records"))
+        logger.debug("🚚 Trailers: %s", trailers_usados)
+
         if df_usado.empty or not trailers_usados:
             logger.warning("⚠️ Nenhuma combinação viável encontrada na rodada %d.", rodada)
             break
 
-        # Atualiza trailers restantes removendo os usados
         trailers_restantes = [t for t in trailers_restantes if t not in trailers_usados]
-        trailers = trailers_usados
-
-        if not trailers:
+        if not trailers_restantes:
             logger.warning("⚠️ Sem trailers restantes após rodada %d.", rodada)
-            break
 
-        n_srv = len(df)
+        trailers = trailers_usados
+        n_srv = len(df_usado)
         n_veh = len(trailers)
         depot = 0
         n_nodes = 1 + 2 * n_srv
@@ -116,16 +117,16 @@ async def optimize(
         cb_indices, demand_fns = create_demand_callbacks(df, manager, routing, depot_indices=[depot])
         ceu_caps = _get_ceu_capacities(trailers)
 
-        if debug:
-            logger.warning("🧪 Verificação dos demand callbacks (ceu, lig, fur, rod):")
-            for kind, fn in demand_fns.items():
-                for idx in range(manager.GetNumberOfIndices()):
-                    try:
-                        val = fn(idx)
-                        node = manager.IndexToNode(idx)
-                        logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
-                    except Exception as e:
-                        logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
+        # if debug:
+        #     logger.warning("🧪 Verificação dos demand callbacks (ceu, lig, fur, rod):")
+        #     for kind, fn in demand_fns.items():
+        #         for idx in range(manager.GetNumberOfIndices()):
+        #             try:
+        #                 val = fn(idx)
+        #                 node = manager.IndexToNode(idx)
+        #                 logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
+        #             except Exception as e:
+        #                 logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
         routing.AddDimensionWithVehicleCapacity(cb_indices["ceu"], 0, ceu_caps, True, "CEU")
         ceu_dim = routing.GetDimensionOrDie("CEU")
