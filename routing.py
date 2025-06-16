@@ -1,7 +1,7 @@
 # backend/solver/routing.py
 from __future__ import annotations
 
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Optional
 from ortools.constraint_solver import pywrapcp
 import pandas as pd
 import logging
@@ -83,9 +83,12 @@ def log_base_invalid(
     node: int,
     base: int,
     pickup: bool,
-    kind: str
+    kind: str,
+    trailers: Optional[List[dict]] = None,
+    vehicle_idx: Optional[int] = None,
 ) -> None:
     is_pickup = "pickup" if pickup else "delivery"
+
     ceu_val = (
         df.at[base, "ceu_int"]
         if "ceu_int" in df.columns and 0 <= base < len(df) and pd.notna(df.at[base, "ceu_int"])
@@ -93,23 +96,42 @@ def log_base_invalid(
     )
     matricula = (
         str(df.at[base, "matricula"])
-        if "matricula" in df.columns and 0 <= base < len(df)
+        if "matricula" in df.columns and 0 <= base < len(df) and pd.notna(df.at[base, "matricula"])
         else "N/A"
     )
     cat = (
         str(df.at[base, "vehicle_category_name"])
-        if "vehicle_category_name" in df.columns and 0 <= base < len(df)
+        if "vehicle_category_name" in df.columns and 0 <= base < len(df) and pd.notna(df.at[base, "vehicle_category_name"])
         else "N/A"
     )
-    idx_val = (
-        df.index[base] if 0 <= base < len(df) else "?"
-    )
+    try:
+        idx_val = df.index[base]
+    except Exception:
+        idx_val = "?"
 
     logger.warning("⚠️ Base fora do intervalo: node=%s base=%s", node, base)
     logger.warning(
         "⚠️ BASE inválido [%s]: node=%d base=%d df_len=%d df.index=%s kind=%s ceu_int=%s matricula=%s cat='%s'",
-        is_pickup, node, base, len(df), idx_val, kind.upper(), ceu_val, matricula, cat
+        is_pickup,
+        node,
+        base,
+        len(df),
+        idx_val,
+        kind.upper(),
+        ceu_val,
+        matricula,
+        cat,
     )
+
+    # 🧪 Dump completo da linha no modo debug
+    if 0 <= base < len(df):
+        logger.debug("📄 Linha df.iloc[%d]:\n%s", base, df.iloc[base].to_dict())
+
+    # 🚛 Trailer vinculado, se índice informado
+    if trailers and vehicle_idx is not None and 0 <= vehicle_idx < len(trailers):
+        logger.debug("🚛 Trailer #%d: %s", vehicle_idx, trailers[vehicle_idx])
+
+
 
 
 

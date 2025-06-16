@@ -77,6 +77,7 @@ async def _load_dataframe(
         """
         SELECT
             id,
+            campos->>'registry' AS matricula,
             campos->'load_city'->>'description'    AS load_city,
             campos->'unload_city'->>'description'  AS unload_city,
             campos->>'expected_delivery_date'       AS expected_delivery_date,
