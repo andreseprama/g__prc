@@ -69,7 +69,6 @@ def build_routing_model(
 # ══════════════════════════════════════════════════════════════════════════════
 # 3.  DEMAND (capacidade) POR CATEGORIA
 # ══════════════════════════════════════════════════════════════════════════════
-# backend/solver/routing.py
 def create_demand_callbacks(
     df: pd.DataFrame,
     manager: pywrapcp.RoutingIndexManager,
@@ -78,9 +77,13 @@ def create_demand_callbacks(
 ) -> Tuple[Dict[str, int], Dict[str, Callable[[int], int]]]:
     """
     Cria callbacks de demanda para diferentes tipos de capacidade (CEU, LIG, FUR, ROD).
-    Retorna um dicionário com chaves ['ceu', 'lig', 'fur', 'rod'] e os seus IDs no OR-Tools.
+
+    Retorna:
+      - cb_indices: dict com nomes e IDs registrados no OR-Tools
+      - demand_fns: dict com as funções reais de demanda para debug
     """
     cb_indices: Dict[str, int] = {}
+    demand_fns: Dict[str, Callable[[int], int]] = {}
     n = len(df)
 
     def build_demand(kind: str) -> Callable[[int], int]:
@@ -126,23 +129,15 @@ def create_demand_callbacks(
                 return 0 if not pickup else (1 if "furg" in cat else 0)
             if kind == "rod":
                 return 0 if not pickup else (1 if "rodado" in cat else 0)
+
             return 0
 
         return demand
 
     for kind in ["ceu", "lig", "fur", "rod"]:
         fn = build_demand(kind)
+        demand_fns[kind] = fn
         cb_indices[kind] = routing.RegisterUnaryTransitCallback(fn)
-
-        if __debug__:
-            logger.warning("🧪 Debug manual para callback %s", kind)
-            for idx in range(manager.GetNumberOfIndices()):
-                try:
-                    val = fn(idx)
-                    node = manager.IndexToNode(idx)
-                    logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
-                except Exception as e:
-                    logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
     return cb_indices, demand_fns
 

@@ -105,7 +105,7 @@ async def optimize(
                     logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
         routing.AddDimensionWithVehicleCapacity(
-            demand_cbs["ceu"], 0, ceu_caps, True, "CEU"
+            cb_indices["ceu"], 0, ceu_caps, True, "CEU"
         )
 
     ceu_dim = routing.GetDimensionOrDie("CEU")

@@ -8,13 +8,22 @@ def ceu_dimension(
     df,
     ceu_cap: float,
 ):
-    """Capacity constraint em CEU."""
+    """Adiciona restrição de capacidade em CEU à rota."""
 
     def demand(idx):
-        node = manager.IndexToNode(idx)
-        return df.ceu_std.iloc[node] if node < len(df) else 0
+        try:
+            node = manager.IndexToNode(idx)
+            if 0 <= node < len(df):
+                return int(df.ceu_std.iloc[node])
+        except Exception as e:
+            print(f"⚠️ Erro ao calcular demanda CEU para idx={idx}: {e}")
+        return 0  # fallback seguro
 
     demand_cb = routing.RegisterUnaryTransitCallback(demand)
     routing.AddDimensionWithVehicleCapacity(
-        demand_cb, 0, [ceu_cap] * routing.vehicles(), True, "Capacity"
+        demand_cb,
+        0,  # nenhum slack
+        [int(ceu_cap)] * routing.vehicles(),  # capacidade por veículo
+        True,  # capacidade cumulativa
+        "Capacity",
     )
