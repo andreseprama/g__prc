@@ -90,23 +90,23 @@ async def optimize(
     assert cost_cb >= 0, "Erro ao registrar transit callback"
     routing.SetArcCostEvaluatorOfAllVehicles(cost_cb)
 
-    demand_cbs = create_demand_callbacks(df, manager, routing, depot_indices=[depot])
+    cb_indices, demand_fns = create_demand_callbacks(df, manager, routing, depot_indices=[depot])
     ceu_caps = _get_ceu_capacities(trailers)
+
     if debug:
         logger.warning("🧪 Verificação dos demand callbacks (ceu, lig, fur, rod):")
-        for kind, cb in demand_cbs.items():
-            try:
-                fn = getattr(routing, "GetUnaryTransitCallback")(cb)
-                for idx in range(manager.GetNumberOfIndices()):
+        for kind, fn in demand_fns.items():
+            for idx in range(manager.GetNumberOfIndices()):
+                try:
                     val = fn(idx)
                     node = manager.IndexToNode(idx)
                     logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
-            except Exception as e:
-                logger.error("⛔ Callback %s falhou: %s", kind, e)
+                except Exception as e:
+                    logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
-    routing.AddDimensionWithVehicleCapacity(
-        demand_cbs["ceu"], 0, ceu_caps, True, "CEU"
-    )
+        routing.AddDimensionWithVehicleCapacity(
+            demand_cbs["ceu"], 0, ceu_caps, True, "CEU"
+        )
 
     ceu_dim = routing.GetDimensionOrDie("CEU")
     ceu_dim.SetGlobalSpanCostCoefficient(10000)

@@ -1,7 +1,7 @@
 # backend/solver/routing.py
 from __future__ import annotations
 
-from typing import List, Dict, Callable, Optional
+from typing import List, Dict, Callable, Optional, Tuple
 from ortools.constraint_solver import pywrapcp
 import pandas as pd
 import logging
@@ -75,21 +75,18 @@ def create_demand_callbacks(
     manager: pywrapcp.RoutingIndexManager,
     routing: pywrapcp.RoutingModel,
     depot_indices: List[int],
-) -> Dict[str, int]:
+) -> Tuple[Dict[str, int], Dict[str, Callable[[int], int]]]:
     """
     Cria callbacks de demanda para diferentes tipos de capacidade (CEU, LIG, FUR, ROD).
-
-    Retorna um dicionário com chaves ['ceu', 'lig', 'fur', 'rod'] e seus respectivos 
-    callbacks registrados no modelo do OR-Tools.
+    Retorna um dicionário com chaves ['ceu', 'lig', 'fur', 'rod'] e os seus IDs no OR-Tools.
     """
-    demand_fns: Dict[str, Callable[[int], int]] = {}
+    cb_indices: Dict[str, int] = {}
     n = len(df)
 
     def build_demand(kind: str) -> Callable[[int], int]:
         def demand(index: int) -> int:
             if index < 0 or index >= manager.GetNumberOfIndices():
                 return 0
-
             try:
                 node = manager.IndexToNode(index)
             except Exception as e:
@@ -129,16 +126,15 @@ def create_demand_callbacks(
                 return 0 if not pickup else (1 if "furg" in cat else 0)
             if kind == "rod":
                 return 0 if not pickup else (1 if "rodado" in cat else 0)
-
             return 0
 
         return demand
 
     for kind in ["ceu", "lig", "fur", "rod"]:
-        demand_fns[kind] = build_demand(kind)
+        fn = build_demand(kind)
+        cb_indices[kind] = routing.RegisterUnaryTransitCallback(fn)
 
-    if __debug__:
-        for kind, fn in demand_fns.items():
+        if __debug__:
             logger.warning("🧪 Debug manual para callback %s", kind)
             for idx in range(manager.GetNumberOfIndices()):
                 try:
@@ -148,7 +144,7 @@ def create_demand_callbacks(
                 except Exception as e:
                     logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
 
-    return {kind: routing.RegisterUnaryTransitCallback(fn) for kind, fn in demand_fns.items()}
+    return cb_indices, demand_fns
 
 
 def log_base_invalid(
