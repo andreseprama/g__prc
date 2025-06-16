@@ -122,6 +122,8 @@ async def optimize(
             continue
         assert 0 <= p_idx < manager.GetNumberOfIndices(), f"p_idx fora do range: {p_idx}"
         assert 0 <= d_idx < manager.GetNumberOfIndices(), f"d_idx fora do range: {d_idx}"
+        logger.warning("📍 DEBUG pickup=%s delivery=%s → node(p)=%d node(d)=%d", p_idx, d_idx,
+               manager.IndexToNode(p_idx), manager.IndexToNode(d_idx))
         routing.AddPickupAndDelivery(p_idx, d_idx)
         solver.Add(routing.VehicleVar(p_idx) == routing.VehicleVar(d_idx))
         solver.Add(ceu_dim.CumulVar(p_idx) <= ceu_dim.CumulVar(d_idx))

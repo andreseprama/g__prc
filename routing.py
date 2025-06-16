@@ -71,6 +71,53 @@ def build_routing_model(
 # ══════════════════════════════════════════════════════════════════════════════
 # backend/solver/routing.py
 
+
+
+
+
+
+
+
+def log_base_invalid(
+    df: pd.DataFrame,
+    node: int,
+    base: int,
+    pickup: bool,
+    kind: str
+) -> None:
+    is_pickup = "pickup" if pickup else "delivery"
+    ceu_val = (
+        df.at[base, "ceu_int"]
+        if "ceu_int" in df.columns and 0 <= base < len(df) and pd.notna(df.at[base, "ceu_int"])
+        else "N/A"
+    )
+    matricula = (
+        str(df.at[base, "matricula"])
+        if "matricula" in df.columns and 0 <= base < len(df)
+        else "N/A"
+    )
+    cat = (
+        str(df.at[base, "vehicle_category_name"])
+        if "vehicle_category_name" in df.columns and 0 <= base < len(df)
+        else "N/A"
+    )
+    idx_val = (
+        df.index[base] if 0 <= base < len(df) else "?"
+    )
+
+    logger.warning("⚠️ Base fora do intervalo: node=%s base=%s", node, base)
+    logger.warning(
+        "⚠️ BASE inválido [%s]: node=%d base=%d df_len=%d df.index=%s kind=%s ceu_int=%s matricula=%s cat='%s'",
+        is_pickup, node, base, len(df), idx_val, kind.upper(), ceu_val, matricula, cat
+    )
+
+
+
+
+
+
+
+
 def create_demand_callbacks(
     df: pd.DataFrame,
     manager: pywrapcp.RoutingIndexManager,
@@ -97,23 +144,7 @@ def create_demand_callbacks(
             base = node if pickup else node - len(df)
 
             if base < 0 or base >= len(df):
-                logger.debug("n_nodes = %s", manager.GetNumberOfNodes())
-                logger.debug("df.shape = %s", df.shape)
-
-                is_pickup = "pickup" if pickup else "delivery"
-                ceu_val = (
-                    df.at[base, "ceu_int"] if "ceu_int" in df.columns and 0 <= base < len(df) and pd.notna(df.at[base, "ceu_int"])
-                    else "N/A"
-                )
-                matricula = (
-                    str(df.at[base, "matricula"]) if "matricula" in df.columns and 0 <= base < len(df) else "N/A"
-                )
-
-                logger.warning("⚠️ Base fora do intervalo: node=%s base=%s", node, base)
-                logger.warning(
-                    "⚠️ BASE inválido: node=%d base=%d len(df)=%d [%s] matricula=%s ceu_int=%s",
-                    node, base, len(df), is_pickup, matricula, ceu_val,
-                )
+                log_base_invalid(df, node, base, pickup, kind)
                 return 0
 
             cat = (
