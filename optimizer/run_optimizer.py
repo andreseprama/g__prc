@@ -36,12 +36,12 @@ def _get_ceu_capacities(trailers: List[dict]) -> List[int]:
 async def optimize(
     sess: AsyncSession,
     dia: date,
-    matricula: Optional[str] = None,
+    registry_trailer: Optional[str] = None,
     categoria_filtrada: Optional[List[str]] = None,
     debug: bool = False,
     safe: bool = False,
 ) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
-    df, trailers, base_map = await prepare_input_dataframe(sess, dia, matricula)
+    df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
     logger.debug("🔎 Serviços: %d", len(df))  # ← esta linha deve estar aqui
     if df.empty:
         logger.warning("⚠️ Nenhum serviço elegível para %s", dia)

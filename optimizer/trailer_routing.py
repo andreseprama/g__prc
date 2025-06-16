@@ -43,20 +43,24 @@ def filter_services_by_category(
     return result
 
 
-def match_trailers_by_registry(
-    trailers: list[dict[str, Any]], matricula: str
+def match_trailers_by_registry_trailer(
+    trailers: list[dict[str, Any]], registry_trailer: str
 ) -> list[dict[str, Any]]:
     """
     Filtra lista de trailers ativos por matrícula.
 
     :param trailers: lista de trailers carregados
-    :param matricula: matrícula procurada
+    :param registry_trailer: matrícula procurada
     """
-    normalized = matricula.strip().upper()
+    normalized = registry_trailer.strip().upper()
     result = [
-        t for t in trailers if (t["registry"] or "").strip().upper() == normalized
+        t for t in trailers if (t["registry_trailer"] or "").strip().upper() == normalized
     ]
 
     if not result:
-        logging.warning(f"❌ Nenhum trailer encontrado com matrícula {matricula}")
+        logging.warning(f"❌ Nenhum trailer encontrado com matrícula {registry_trailer}")
     return result
+
+
+# 👮 Evita uso incorreto por nome antigo
+__all__ = ["match_trailers_by_registry_trailer"]

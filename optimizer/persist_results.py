@@ -57,7 +57,7 @@ async def persist_routes(
         logger.info(
             "📝 Rota %s criada para trailer %s (CEU=%.1f)",
             rota_id,
-            trailer["registry"],
+            trailer["registry_trailer"],
             ceu,
         )
 

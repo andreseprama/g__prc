@@ -38,7 +38,7 @@ async def summarize_coverage(df: pd.DataFrame) -> None:
 
 
 async def get_trailers_for_run(
-    sess: AsyncSession, df: pd.DataFrame, matricula: Optional[str]
+    sess: AsyncSession, df: pd.DataFrame, registry_trailer: Optional[str]
 ) -> List:
     """
     Carrega trailers e filtra por matrícula se necessário.
@@ -46,7 +46,7 @@ async def get_trailers_for_run(
     q = await sess.execute(
         text(
             """
-            SELECT t.id, t.registry, t.base_city, tc.id as trailer_cat,
+            SELECT t.id, t.registry_trailer, t.base_city, tc.id as trailer_cat,
                    tc.ceu_max, tc.ligeiro_max, tc.furgo_max, tc.rodado_max
             FROM trailer t
             JOIN truck_category tc ON tc.id = t.cat_id
@@ -56,11 +56,11 @@ async def get_trailers_for_run(
     )
     trailers = list(q.fetchall())
 
-    if matricula:
+    if registry_trailer:
         trailers = [
             t
             for t in trailers
-            if (t.registry or "").strip().upper() == matricula.strip().upper()
+            if (t.registry_trailer or "").strip().upper() == registry_trailer.strip().upper()
         ]
 
     return trailers

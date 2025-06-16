@@ -96,7 +96,7 @@ async def load_trailers(sess: AsyncSession) -> list:
             """
             SELECT
                 t.id,
-                t.registry,
+                t.registry_trailer ,
                 t.base_city,
                 tc.id AS cat_id,
                 tc.ceu_max,

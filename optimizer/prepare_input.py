@@ -16,7 +16,7 @@ from backend.solver.optimizer.rules import (
     flag_return_and_base_fields,
     get_scheduled_base,
 )
-from backend.solver.optimizer.trailer_routing import match_trailers_by_registry
+from backend.solver.optimizer.trailer_routing import match_trailers_by_registry_trailer
 
 from backend.solver.utils import norm
 
@@ -26,14 +26,14 @@ logger = logging.getLogger(__name__)
 async def prepare_input_dataframe(
     sess: AsyncSession,
     dia: date,
-    matricula: Optional[str] = None,
+    registry_trailer: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, List[dict], Dict[str, str]]:
     """
     1) Carrega serviços elegíveis até `dia`.
     2) Normaliza cidades e calcula CEU.
     3) Traz mapa city_norm → base_norm.
     4) Marca flags e identifica base agendada.
-    5) Carrega trailers e filtra por matrícula (se passada).
+    5) Carrega trailers e filtra por registry_trailer (se passada).
     """
     df = await _load_dataframe(sess, dia)
     if df is None or df.empty:
@@ -60,11 +60,11 @@ async def prepare_input_dataframe(
     trailers = await load_trailers(sess)
     trailers = [dict(t._mapping) for t in trailers]
 
-    # --- filtro opcional por matrícula ---
-    if matricula:
-        trailers = match_trailers_by_registry(trailers, matricula)
+    # --- filtro opcional por registry_trailer ---
+    if registry_trailer:
+        trailers = match_trailers_by_registry_trailer(trailers, registry_trailer)
         if not trailers:
-            logger.warning("❌ Nenhum trailer com matrícula %s", matricula)
+            logger.warning("❌ Nenhum trailer com matrícula %s", registry_trailer)
             return pd.DataFrame(), [], base_map
 
     return df, trailers, base_map
@@ -107,6 +107,7 @@ async def _load_dataframe(
         return None
 
     df = pd.DataFrame(rows, columns=list(result.keys()))
+    print(df[["matricula", "load_city", "unload_city"]].head(10))  # <-- Adiciona isto
     df["expected_delivery_date"] = pd.to_datetime(df["expected_delivery_date"])
     df["expected_delivery_date_manual"] = pd.to_datetime(
         df["expected_delivery_date_manual"], errors="coerce"
