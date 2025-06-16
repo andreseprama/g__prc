@@ -103,19 +103,7 @@ def create_demand_callbacks(
             base = node if pickup else node - n
 
             if base < 0 or base >= n:
-                logger.error("⛔ base inválida: node=%s base=%s df_len=%d", node, base, len(df))
-                logger.warning(
-                    "⚠️ BASE inválido [%s]: node=%d base=%d df_len=%d df.index=%s kind=%s ceu_int=%s matricula=%s cat='%s'",
-                    "pickup" if pickup else "delivery",
-                    node,
-                    base,
-                    len(df),
-                    df.index[base] if 0 <= base < len(df.index) else "?",
-                    kind,
-                    df.at[base, "ceu_int"] if "ceu_int" in df.columns else "N/A",
-                    df.at[base, "matricula"] if "matricula" in df.columns else "N/A",
-                    df.at[base, "vehicle_category_name"] if "vehicle_category_name" in df.columns else "N/A",
-                )
+                logger.debug("🔕 Ignorando node fora do range válido: node=%s base=%s df_len=%d", node, base, len(df))
                 return 0
 
             cat = str(df.at[base, "vehicle_category_name"]).lower() if pd.notna(df.at[base, "vehicle_category_name"]) else ""
@@ -139,7 +127,18 @@ def create_demand_callbacks(
         demand_fns[kind] = fn
         cb_indices[kind] = routing.RegisterUnaryTransitCallback(fn)
 
+        if __debug__:
+            logger.warning("🧪 Debug manual para callback %s", kind)
+            for idx in range(manager.GetNumberOfIndices()):
+                try:
+                    val = fn(idx)
+                    node = manager.IndexToNode(idx)
+                    logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
+                except Exception as e:
+                    logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
+
     return cb_indices, demand_fns
+
 
 
 def log_base_invalid(
