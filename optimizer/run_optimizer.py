@@ -94,7 +94,7 @@ async def optimize(
         for kind, cb in demand_cbs.items():
             for idx in range(manager.GetNumberOfIndices()):
                 try:
-                    val = routing.CallbackOrDie(cb)(idx)
+                    val = cb(idx)  # ← fix aqui
                     node = manager.IndexToNode(idx)
                     logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
                 except Exception as e:

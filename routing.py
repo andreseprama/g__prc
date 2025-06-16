@@ -75,7 +75,10 @@ def create_demand_callbacks(
     routing: pywrapcp.RoutingModel,
     depot_indices: List[int],
 ) -> Dict[str, int]:
-    def mk_cb(kind: str) -> int:
+    callbacks: Dict[str, int] = {}
+    demand_fns: Dict[str, Callable[[int], int]] = {}
+
+    def build_demand(kind: str) -> Callable[[int], int]:
         def demand(index: int) -> int:
             if index < 0 or index >= manager.GetNumberOfIndices():
                 return 0
@@ -95,26 +98,34 @@ def create_demand_callbacks(
                 logger.debug("n_nodes = %s", manager.GetNumberOfNodes())
                 logger.debug("df.shape = %s", df.shape)
                 logger.warning("⚠️ Base fora do intervalo: node=%s base=%s", node, base)
+                logger.warning("⚠️ BASE inválido: node=%d base=%d len(df)=%d", node, base, len(df))
                 if 0 <= base < df.shape[0]:
                     logger.warning("⚠️ CEU debug → df.ceu_int.iat[%s] = %s", base, df.ceu_int.iat[base])
                 return 0
 
-            cat = (df.vehicle_category_name.iat[base] or "").lower()
-            ceu_val = int(df.ceu_int.iat[base]) if pickup else 0
+            cat = (
+                str(df.at[base, "vehicle_category_name"]).lower()
+                if "vehicle_category_name" in df.columns and pd.notna(df.at[base, "vehicle_category_name"])
+                else ""
+            )
+            logger.debug("📋 Tipo de viatura: node=%d base=%d → cat='%s'", node, base, cat)
+
+            ceu_val = (
+                int(df.at[base, "ceu_int"]) if "ceu_int" in df.columns and pd.notna(df.at[base, "ceu_int"]) and pickup
+                else 0
+            )
             logger.debug("📦 demand(): index=%d → node=%d base=%d ceu=%d", index, node, base, ceu_val)
 
             if kind == "ceu":
-                return int(df.ceu_int.iat[base]) if pickup else 0
+                return ceu_val
             if kind == "lig":
                 val = 0 if not pickup else (0 if "moto" in cat else 1)
                 logger.debug("LIG: node=%s base=%s cat=%s → %s", node, base, cat, val)
                 return val
-
             if kind == "fur":
                 val = 0 if not pickup else (1 if "furg" in cat else 0)
                 logger.debug("FUR: node=%s base=%s cat=%s → %s", node, base, cat, val)
                 return val
-
             if kind == "rod":
                 val = 0 if not pickup else (1 if "rodado" in cat else 0)
                 logger.debug("ROD: node=%s base=%s cat=%s → %s", node, base, cat, val)
@@ -122,14 +133,27 @@ def create_demand_callbacks(
 
             return 0
 
-        return routing.RegisterUnaryTransitCallback(demand)
+        return demand
 
-    return {
-        "ceu": mk_cb("ceu"),
-        "lig": mk_cb("lig"),
-        "fur": mk_cb("fur"),
-        "rod": mk_cb("rod"),
-    }
+    for kind in ["ceu", "lig", "fur", "rod"]:
+        fn = build_demand(kind)
+        cb = routing.RegisterUnaryTransitCallback(fn)
+        callbacks[kind] = cb
+        demand_fns[kind] = fn
+
+    # Debug manual
+    if __debug__:
+        logger.warning("🧪 Debug manual para demand callbacks:")
+        for kind, fn in demand_fns.items():
+            for idx in range(manager.GetNumberOfIndices()):
+                try:
+                    val = fn(idx)
+                    node = manager.IndexToNode(idx)
+                    logger.warning("🧪 %s → idx=%d, node=%d, demand=%s", kind.upper(), idx, node, val)
+                except Exception as e:
+                    logger.error("⛔ Callback %s falhou para idx=%d: %s", kind, idx, e)
+
+    return callbacks
 
 
 # ══════════════════════════════════════════════════════════════════════════════
