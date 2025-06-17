@@ -8,6 +8,8 @@ from backend.solver.routing import (
     add_dimensions_and_constraints,
 )
 
+from backend.solver.utils import norm
+
 
 def apply_all_constraints(
     routing: pywrapcp.RoutingModel,

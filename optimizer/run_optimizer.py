@@ -1,4 +1,4 @@
-# backend/solver/optimizer/run_optimizer.py (com geocodificação antecipada)
+# backend/solver/optimizer/run_optimizer.py (com geocodificação antecipada e correções finais)
 
 from __future__ import annotations
 import logging
@@ -16,6 +16,7 @@ from .constraints import apply_all_constraints
 from .persist_results import persist_routes
 from backend.solver.geocode import fetch_and_store_city
 from backend.solver.utils import norm
+from backend.solver.optimizer.city_mapping import get_unique_cities
 
 faulthandler.enable()
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
             depot_indices=starts,
             distance_matrix=dist_matrix,
             constraint_weights={"ceu": 1.0},
-            enable_pickup_pairs=True,
+            enable_pickup_pairs=False,
         )
 
         search = pywrapcp.DefaultRoutingSearchParameters()
@@ -89,17 +90,22 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
             logger.warning("❌ Nenhuma solução encontrada na rodada %d.", rodada)
             break
 
+        unique_cities = get_unique_cities(df_usado, trailers_usados)
+
         routes: List[Tuple[int, List[int]]] = []
-        n_srv = len(df_usado)
         for v in range(len(trailers_usados)):
             idx = routing.Start(v)
             path = []
+            distance = 0
             while not routing.IsEnd(idx):
                 node = manager.IndexToNode(idx)
-                if node != 0:
-                    path.append(node - 1)
-                idx = solution.Value(routing.NextVar(idx))
+                path.append(node)
+                logger.debug(f"🚏 Veículo {v} → nó {node} = {unique_cities[node]}")
+                next_idx = solution.Value(routing.NextVar(idx))
+                distance += routing.GetArcCostForVehicle(idx, next_idx, v)
+                idx = next_idx
             if path:
+                logger.info(f"🛣️ Veículo {v} → distância total = {distance} km")
                 routes.append((v, path))
 
         rota_ids = await persist_routes(sess, dia, df_usado, routes, trailer_starts=starts, trailers=trailers_usados)

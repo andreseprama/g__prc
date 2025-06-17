@@ -64,8 +64,10 @@ def set_cost_callback(
             to_node = manager.IndexToNode(j)
             return dist_matrix[from_node][to_node]
         except Exception as e:
-            logger.error(f"⛔ Erro no cost_cb: i={i}, j={j} -> {e}")
-            return 999999
+            from_node = manager.IndexToNode(i)
+            to_node = manager.IndexToNode(j)
+            logger.error(f"⛔ cost_cb failed: i={i} j={j} from={from_node} to={to_node} → {e}")
+            return 1  # ⚠️ fallback leve p/ evitar travamento total
 
     index = routing.RegisterTransitCallback(cost_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(index)
@@ -78,34 +80,27 @@ def setup_routing_model(
 ) -> Tuple[
     pywrapcp.RoutingModel, pywrapcp.RoutingIndexManager, List[int], List[List[int]]
 ]:
-    """
-    Prepara o modelo de otimização de rotas com a OR-Tools.
-    Retorna modelo, manager, índices de base e matriz de distância.
-    """
-    locations = get_unique_cities(df, trailers)
-    print(f"➡️ Cidades únicas utilizadas: {locations}")
-
-    city_index_map = map_city_indices(locations)
-    print(f"➡️ city_index_map: {city_index_map}")
+    locations, city_index_map, dist_matrix = build_city_index_and_matrix(df, trailers)
+    logger.info(f"➡️ Cidades únicas utilizadas: {locations}")
+    logger.debug(f"➡️ city_index_map: {city_index_map}")
 
     starts, ends = map_bases_to_indices(trailers, city_index_map)
-    print(f"➡️ Índices de partida: {starts}")
-    print(f"➡️ Índices de chegada: {ends}")
-
-    locations, city_index_map, dist_matrix = build_city_index_and_matrix(df, trailers)
-    print(
-        f"➡️ Tamanho original do dist_matrix: {len(dist_matrix)}x{len(dist_matrix[0])}"
-    )
+    logger.debug(f"➡️ Índices de partida: {starts}")
+    logger.debug(f"➡️ Índices de chegada: {ends}")
+    logger.debug(f"➡️ city_index_map: {city_index_map}")
+    logger.debug(f"➡️ starts: {starts}, ends: {ends}")
+    logger.debug(f"➡️ n_locations={len(locations)}")
+    logger.debug(f"➡️ dist_matrix[0][:5]: {dist_matrix[0][:5]}")  # preview das distâncias
 
     manager, routing = create_manager_and_model(locations, starts, ends)
-    print(f"➡️ Nº nós no manager: {manager.GetNumberOfNodes()}")
-    print(f"➡️ Nº índices no manager: {manager.GetNumberOfIndices()}")
+    logger.debug(f"➡️ Nº nós no manager: {manager.GetNumberOfNodes()}")
+    logger.debug(f"➡️ Nº índices no manager: {manager.GetNumberOfIndices()}")
 
-    # 🩹 Ajustar matriz de distância para OR-Tools
     padded_matrix = pad_dist_matrix(dist_matrix, manager.GetNumberOfNodes())
-    print(f"➡️ Tamanho padded_matrix: {len(padded_matrix)}x{len(padded_matrix[0])}")
+    logger.debug(f"🧩 padded_matrix[0][:5]: {padded_matrix[0][:5]}")
+    logger.debug(f"➡️ Tamanho padded_matrix: {len(padded_matrix)}x{len(padded_matrix[0])}")
 
     set_cost_callback(routing, manager, padded_matrix)
-    print("✅ Callback de custo de distância definido")
+    logger.info("✅ Callback de custo de distância definido")
 
     return routing, manager, starts, padded_matrix
