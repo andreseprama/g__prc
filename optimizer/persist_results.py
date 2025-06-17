@@ -28,21 +28,25 @@ async def persist_routes(
     for vehicle_id, path in routes:
         trailer = trailers[vehicle_id]
 
-        # ——— métricas ———
-        ceu = sum(
-            df.ceu_int.iloc[df_idx_map.get(node, node)] if df_idx_map else df.ceu_int.iloc[node]
-            for node in path if node < n_srv
-        ) / 10.0
+        # --- cálculo CEU ---
+        ceu_total = 0
+        for node in path:
+            if node >= n_srv:
+                continue
+            idx = df_idx_map.get(node, node) if df_idx_map else node
+            if 0 <= idx < len(df):
+                ceu_total += df.ceu_int.iloc[idx]
+            else:
+                logger.warning(f"⚠️ Índice CEU inválido: node={node} → idx={idx}, df_len={len(df)}")
+        ceu = ceu_total / 10.0
 
-        # ——— cria a rota ———
+        # --- cria a rota ---
         q_rota = await sess.execute(
             text(
                 """
                 INSERT INTO rota (data, trailer_id, origem_idx,
                                   total_km, total_ceu)
-                VALUES (:data, :trailer_id, 0,      -- origem fictícia
-                        0,          -- total_km = 0
-                        :total_ceu)
+                VALUES (:data, :trailer_id, 0, 0, :total_ceu)
                 RETURNING id
                 """
             ),
@@ -65,13 +69,17 @@ async def persist_routes(
             ceu,
         )
 
-        # ——— insere as paragens (pickup + delivery) ———
+        # --- insere as paragens ---
         for ordem, node in enumerate(path):
             is_pickup = node < n_srv
-            service_idx = df_idx_map.get(node, node) if df_idx_map else node
-            service_id = int(df.iloc[service_idx]["id"])
-            node_type = "PICKUP" if is_pickup else "DELIVERY"
+            idx = df_idx_map.get(node, node) if df_idx_map else node
+            if not (0 <= idx < len(df)):
+                logger.warning(f"⚠️ Índice inválido ao buscar service_id: node={node} → idx={idx}, len(df)={len(df)}")
+                continue
             try:
+                row = df.iloc[idx]
+                service_id = int(row["id"])
+                node_type = "PICKUP" if is_pickup else "DELIVERY"
                 await sess.execute(
                     text(
                         """

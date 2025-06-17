@@ -130,14 +130,15 @@ def setup_routing_model(
     
 
 
-    df_idx_map = {manager.NodeToIndex(i): i for i in range(manager.GetNumberOfNodes())}
+    df = df.reset_index(drop=True)
+    df_idx_map = {manager.NodeToIndex(i): i for i in range(len(df))}
     
-    if debug:
-        for solver_idx, df_idx in df_idx_map.items():
-    if not (0 <= df_idx < len(df)):
-        logger.error(f"❌ Índice inválido: df_idx={df_idx} fora do range para DataFrame de tamanho {len(df)}")
-        continue
-    row = df.iloc[df_idx]
-    logger.debug(f"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row['matricula']}, cidade={row['load_city']}")
+if debug:
+    for solver_idx, df_idx in df_idx_map.items():
+        if not (0 <= df_idx < len(df)):
+            logger.error(f\"❌ Índice inválido: df_idx={df_idx} fora do range para DataFrame de tamanho {len(df)}\")
+            continue
+        row = df.iloc[df_idx]
+        logger.debug(f\"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row['matricula']}, cidade={row['load_city']}\")
 
     return routing, manager, starts, padded_matrix, df_idx_map
