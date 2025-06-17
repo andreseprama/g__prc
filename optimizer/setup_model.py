@@ -80,9 +80,19 @@ def setup_routing_model(
 ) -> Tuple[
     pywrapcp.RoutingModel, pywrapcp.RoutingIndexManager, List[int], List[List[int]]
 ]:
+    print("🔥 setup_routing_model foi chamado")  # 👈 Coloca aqui
     locations, city_index_map, dist_matrix = build_city_index_and_matrix(df, trailers)
     logger.info(f"➡️ Cidades únicas utilizadas: {locations}")
     logger.debug(f"➡️ city_index_map: {city_index_map}")
+    
+    # 🚨 Verificação de integridade da matriz dist_matrix (antes do padding)
+    for i, row in enumerate(dist_matrix):
+        for j, val in enumerate(row):
+            if not isinstance(val, int) or val < 0:
+                logger.error(f"🚫 Valor inválido em dist_matrix[{i}][{j}] = {val}")
+                if i < len(locations) and j < len(locations):
+                    logger.error(f"↪️ Cidades: {locations[i]} → {locations[j]}")
+                raise ValueError(f"Distância inválida em dist_matrix[{i}][{j}] = {val}")
 
     starts, ends = map_bases_to_indices(trailers, city_index_map)
     logger.debug(f"➡️ Índices de partida: {starts}")
@@ -97,6 +107,15 @@ def setup_routing_model(
     logger.debug(f"➡️ Nº índices no manager: {manager.GetNumberOfIndices()}")
 
     padded_matrix = pad_dist_matrix(dist_matrix, manager.GetNumberOfNodes())
+    # 🚨 Verificação de integridade da matriz padded_matrix
+    for i, row in enumerate(padded_matrix):
+        for j, val in enumerate(row):
+            if not isinstance(val, int) or val < 0:
+                logger.error(f"🚫 Distância inválida em padded_matrix[{i}][{j}] = {val}")
+                if i < len(locations) and j < len(locations):
+                    logger.error(f"↪️ Cidades: {locations[i]} → {locations[j]}")
+                raise ValueError(f"Distância inválida em padded_matrix[{i}][{j}] = {val}")
+    
     logger.debug(f"🧩 padded_matrix[0][:5]: {padded_matrix[0][:5]}")
     logger.debug(f"➡️ Tamanho padded_matrix: {len(padded_matrix)}x{len(padded_matrix[0])}")
 
