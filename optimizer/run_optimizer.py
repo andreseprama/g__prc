@@ -62,7 +62,7 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
             break
 
         try:
-            routing, manager, starts, dist_matrix = setup_routing_model(df_usado, trailers_usados)
+            routing, manager, starts, dist_matrix = setup_routing_model(df_usado, trailers_usados, debug=debug)
         except Exception as e:
             logger.error(f"❌ Erro ao preparar modelo de rota: {e}")
             break
@@ -107,18 +107,15 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
                     to_node = manager.IndexToNode(next_idx)
                     total_km += dist_matrix[from_node][to_node]
                 idx = next_idx
-            
             if path:
+                logger.info(f"🚣️ Veículo {v} → rota = {path} → Total km: {total_km:.2f}")
                 if debug:
                     agrupamento = {}
                     for node in path:
                         cidade = unique_cities[node]
                         agrupamento[cidade] = agrupamento.get(cidade, 0) + 1
                     agrupado_str = ", ".join(f"{c}: {n}" for c, n in agrupamento.items())
-                    logger.debug(f"🧩 Veículo {v} → agrupamento por cidade: {agrupado_str}")
-                    logger.debug(f"📍 Veículo {v} → sequência: " + " → ".join(unique_cities[n] for n in path))
-
-                logger.info(f"🛣️ Veículo {v} → rota = {path} → Total km: {total_km:.2f}")
+                    logger.debug(f"🧹 Veículo {v} → agrupamento por cidade: {agrupado_str}")
                 routes.append((v, path))
 
         rota_ids = await persist_routes(sess, dia, df_usado, routes, trailer_starts=starts, trailers=trailers_usados)
