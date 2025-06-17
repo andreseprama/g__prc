@@ -11,6 +11,7 @@ from backend.solver.input import load_trailers
 from backend.solver.optimizer.utils_df import (
     normalize_city_fields,
     calculate_ceu,
+    make_service_reg
 )
 from backend.solver.optimizer.rules import (
     flag_return_and_base_fields,
@@ -29,46 +30,37 @@ async def prepare_input_dataframe(
     registry_trailer: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, List[dict], Dict[str, str]]:
     """
-    1) Carrega serviços elegíveis até `dia`.
-    2) Normaliza cidades e calcula CEU.
-    3) Traz mapa city_norm → base_norm.
-    4) Marca flags e identifica base agendada.
-    5) Carrega trailers e filtra por registry_trailer (se passada).
+    Prepara DataFrame e trailers para otimização:
+    - Normaliza cidades
+    - Calcula CEU
+    - Marca is_base
+    - Gera coluna service_reg
     """
     df = await _load_dataframe(sess, dia)
     if df is None or df.empty:
         return pd.DataFrame(), [], {}
 
-    # --- normalização e CEU ---
     df = normalize_city_fields(df)
     df = calculate_ceu(df)
 
-    # --- mapa de concelhos → base ---
     base_map = await fetch_city_base_map(sess)
-    # logger.warning("🗺 base_map keys: %s", list(base_map.keys())[:10])
-    # logger.warning("📍 norm(load_city): %s", norm(df['load_city'].iloc[1]))
-
-    # --- flags de retorno e base ---
     df = flag_return_and_base_fields(df, base_map)
-    # print("🔎 Bases detectadas:")
-    print(df[["matricula", "load_city", "unload_city", "load_is_base", "unload_is_base"]])
 
-
-    # --- base agendada (usando list comprehension para evitar problemas de tipo) ---
     df["scheduled_base"] = [
         get_scheduled_base(row, base_map) for _, row in df.iterrows()
     ]
 
-    # --- trailers ativos ---
     trailers = await load_trailers(sess)
     trailers = [dict(t._mapping) for t in trailers]
 
-    # --- filtro opcional por registry_trailer ---
     if registry_trailer:
         trailers = match_trailers_by_registry_trailer(trailers, registry_trailer)
         if not trailers:
             logger.warning("❌ Nenhum trailer com matrícula %s", registry_trailer)
             return pd.DataFrame(), [], base_map
+
+    # --- Gera chave única service_reg ---
+    df = make_service_reg(df)
 
     return df, trailers, base_map
 
@@ -121,7 +113,8 @@ async def _load_dataframe(
 
 def group_similar_services(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Agrupa serviços que têm o mesmo load/unload/scheduled_base e soma ceu_int.
+    Agrupa serviços com mesmo load/unload/scheduled_base e soma ceu_int.
+    Gera também uma chave service_reg única por linha agrupada.
     """
     grouped = (
         df.groupby(["load_city", "unload_city", "scheduled_base"], dropna=False)
@@ -139,4 +132,5 @@ def group_similar_services(df: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
     grouped["was_grouped"] = True
+    grouped = make_service_reg(grouped)
     return grouped

@@ -56,7 +56,8 @@ async def geocode_all_unique_cities(sess, df):
 
 async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str] = None, categoria_filtrada: Optional[List[str]] = None, debug: bool = False, safe: bool = False, max_voltas: int = 10) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
-    logger.debug(f"📞 Serviços únicos no input: {df['service_reg'].nunique()}")
+    if "service_reg" not in df.columns:
+        raise ValueError("❌ Faltando coluna obrigatória: service_reg")
     if df.empty or not trailers:
         logger.warning("⚠️ Sem dados elegíveis ou trailers disponíveis.")
         return []

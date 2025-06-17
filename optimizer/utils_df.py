@@ -37,3 +37,17 @@ def add_base_flags(df: pd.DataFrame, base_map: dict) -> pd.DataFrame:
     df["force_return"] = df["unload_city"].map(lambda c: norm(c) in base_map)
 
     return df
+
+
+def make_service_reg(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Gera coluna service_reg única por linha com base em colunas id + matricula.
+    """
+    if "service_reg" not in df.columns:
+        if {"id", "matricula"}.issubset(df.columns):
+            df["service_reg"] = df["id"].astype(str) + "_" + df["matricula"].astype(str)
+        elif "id" in df.columns:
+            df["service_reg"] = df["id"].astype(str)
+        else:
+            raise ValueError("❌ Não foi possível construir service_reg: faltam colunas id e/ou matricula.")
+    return df
