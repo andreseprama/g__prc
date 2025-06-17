@@ -76,7 +76,7 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
             depot_indices=starts,
             distance_matrix=dist_matrix,
             constraint_weights={"ceu": 1.0},
-            enable_pickup_pairs=True,
+            enable_pickup_pairs=False,
         )
 
         search = pywrapcp.DefaultRoutingSearchParameters()
