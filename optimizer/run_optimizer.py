@@ -35,17 +35,15 @@ def _get_ceu_capacities(trailers: List[dict]) -> List[int]:
     return capacities
 
 
-async def geocode_all_unique_cities(sess, df):
+async def geocode_all_unique_cities(sess, df: pd.DataFrame):
     cidades = set()
-    for _, row in df.iterrows():
-        if row["load_is_base"] and pd.notnull(row["scheduled_base"]):
-            cidades.add(_norm(row["scheduled_base"]))
-        else:
-            cidades.add(_norm(row["load_city"]))
-        if row["unload_is_base"] and pd.notnull(row["scheduled_base"]):
-            cidades.add(_norm(row["scheduled_base"]))
-        else:
-            cidades.add(_norm(row["unload_city"]))
+
+    # scheduled_base sempre entra
+    cidades.update(_norm(c) for c in df["scheduled_base"].dropna().unique())
+
+    # load/unload: normalizar todas, independentemente de *_is_base
+    cidades.update(_norm(c) for c in df["load_city"].dropna().unique())
+    cidades.update(_norm(c) for c in df["unload_city"].dropna().unique())
 
     for cidade in cidades:
         try:
@@ -58,28 +56,35 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
     if "service_reg" not in df.columns:
         raise ValueError("❌ Faltando coluna obrigatória: service_reg")
+    
+    if "rota_id" in df.columns:
+        duplicates = df.groupby("service_reg")["rota_id"].nunique()
+        invalid_services = duplicates[duplicates > 1]
+        if not invalid_services.empty:
+            raise ValueError(f"❌ Serviços em mais de uma rota: {invalid_services}")
+        
     if df.empty or not trailers:
         logger.warning("⚠️ Sem dados elegíveis ou trailers disponíveis.")
         return []
 
+    # ✅ garantir geocodificação antes de tentar obter do cache
     await geocode_all_unique_cities(sess, df)
 
     bases = df["scheduled_base"].dropna().unique()
-    coords_map: dict[str, Tuple[float, float]] = {}
+    coords_map = {}
     for base in bases:
         coords = get_coords(_norm(base))
-        if coords is not None:
+        if coords is None:
+            logger.warning(f"📌 Coordenadas ausentes para base: {base}. Forçando geocodificação.")
+            await fetch_and_store_city(sess, _norm(base))
+            coords = get_coords(_norm(base))
+        if coords:
             coords_map[base] = coords
     register_coords(coords_map)
 
     rota_ids_total = []
     trailers_restantes = trailers
     services_alocados: Set[str] = set()
-
-    duplicates = df.groupby("service_reg")["rota_id"].nunique()
-    invalid_services = duplicates[duplicates > 1]
-    if not invalid_services.empty:
-        raise ValueError(f"❌ Serviços em mais de uma rota: {invalid_services}")
 
     clusters_load = agrupar_por_cluster_geografico(df, tipo="load", n_clusters=4)
     clusters_unload = agrupar_por_cluster_geografico(df, tipo="unload", n_clusters=2)
