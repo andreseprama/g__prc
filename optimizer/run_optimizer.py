@@ -1,4 +1,4 @@
-# backend/solver/optimizer/run_optimizer.py (refatorado com filtros de capacidade e distância)
+# backend/solver/optimizer/run_optimizer.py (com geocodificação antecipada)
 
 from __future__ import annotations
 import logging
@@ -7,13 +7,15 @@ from typing import Optional, List, Tuple, Union
 import faulthandler
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
-from ortools.constraint_solver import routing_enums_pb2
+from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 from .prepare_input import prepare_input_dataframe
 from .subset_selection import selecionar_servicos_e_trailers_compatíveis
 from .setup_model import setup_routing_model
 from .constraints import apply_all_constraints
 from .persist_results import persist_routes
+from backend.solver.geocode import fetch_and_store_city
+from backend.solver.utils import norm
 
 faulthandler.enable()
 logger = logging.getLogger(__name__)
@@ -31,11 +33,22 @@ def _get_ceu_capacities(trailers: List[dict]) -> List[int]:
     return capacities
 
 
+async def geocode_all_unique_cities(sess, df):
+    cities = set(norm(c) for c in df["load_city"].tolist() + df["unload_city"].tolist())
+    for city in cities:
+        try:
+            await fetch_and_store_city(sess, city)
+        except Exception as e:
+            logger.warning(f"⚠️ Falha ao geocodificar {city}: {e}")
+
+
 async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str] = None, categoria_filtrada: Optional[List[str]] = None, debug: bool = False, safe: bool = False, max_voltas: int = 10) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
     if df.empty or not trailers:
         logger.warning("⚠️ Sem dados elegíveis ou trailers disponíveis.")
         return []
+
+    await geocode_all_unique_cities(sess, df)
 
     rota_ids_total = []
     rodada = 1
@@ -65,7 +78,7 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
             enable_pickup_pairs=True,
         )
 
-        search = routing_enums_pb2.DefaultRoutingSearchParameters()
+        search = pywrapcp.DefaultRoutingSearchParameters()
         search.time_limit.seconds = 30
         search.log_search = debug
         search.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.SAVINGS
