@@ -52,33 +52,30 @@ async def geocode_all_unique_cities(sess, df: pd.DataFrame):
             logger.warning(f"⚠️ Falha ao geocodificar {cidade}: {e}")
 
 
-async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str] = None, categoria_filtrada: Optional[List[str]] = None, debug: bool = False, safe: bool = False, max_voltas: int = 10) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
+async def optimize(
+    sess: AsyncSession,
+    dia: date,
+    registry_trailer: Optional[str] = None,
+    categoria_filtrada: Optional[List[str]] = None,
+    debug: bool = False,
+    safe: bool = False,
+    max_voltas: int = 10
+) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
+
     if "service_reg" not in df.columns:
         raise ValueError("❌ Faltando coluna obrigatória: service_reg")
-    
-    if "rota_id" in df.columns:
-        duplicates = df.groupby("service_reg")["rota_id"].nunique()
-        invalid_services = duplicates[duplicates > 1]
-        if not invalid_services.empty:
-            raise ValueError(f"❌ Serviços em mais de uma rota: {invalid_services}")
-        
     if df.empty or not trailers:
         logger.warning("⚠️ Sem dados elegíveis ou trailers disponíveis.")
         return []
 
-    # ✅ garantir geocodificação antes de tentar obter do cache
     await geocode_all_unique_cities(sess, df)
 
     bases = df["scheduled_base"].dropna().unique()
-    coords_map = {}
+    coords_map: dict[str, Tuple[float, float]] = {}
     for base in bases:
         coords = get_coords(_norm(base))
-        if coords is None:
-            logger.warning(f"📌 Coordenadas ausentes para base: {base}. Forçando geocodificação.")
-            await fetch_and_store_city(sess, _norm(base))
-            coords = get_coords(_norm(base))
-        if coords:
+        if coords is not None:
             coords_map[base] = coords
     register_coords(coords_map)
 
@@ -86,10 +83,16 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
     trailers_restantes = trailers
     services_alocados: Set[str] = set()
 
+    # ✨ Verifica duplicidade apenas se existir rota_id
+    if "rota_id" in df.columns:
+        duplicates = df.groupby("service_reg")["rota_id"].nunique()
+        invalid_services = duplicates[duplicates > 1]
+        if not invalid_services.empty:
+            raise ValueError(f"❌ Serviços em mais de uma rota: {invalid_services}")
+
     clusters_load = agrupar_por_cluster_geografico(df, tipo="load", n_clusters=4)
     clusters_unload = agrupar_por_cluster_geografico(df, tipo="unload", n_clusters=2)
 
-    # Intercalar os clusters
     clusters = list(chain.from_iterable(zip_longest(clusters_load, clusters_unload)))
     clusters = [c for c in clusters if c is not None]
 
@@ -105,7 +108,7 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
             continue
 
         try:
-            routing, manager, starts, dist_matrix = setup_routing_model(df_usado, trailers_usados, debug=debug)
+            routing, manager, starts, dist_matrix, df_idx_map = setup_routing_model(df_usado, trailers_usados, debug=debug)
         except Exception as e:
             logger.error(f"❌ Erro ao preparar modelo de rota: {e}")
             continue
@@ -154,7 +157,7 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
                     logger.debug(f"🩹 Veículo {v} → agrupamento por cidade: {agrupado_str}")
                 routes.append((v, path))
 
-        rota_ids = await persist_routes(sess, dia, df_usado, routes, trailer_starts=starts, trailers=trailers_usados)
+        rota_ids = await persist_routes(sess, dia, df_usado, routes, trailer_starts=starts, trailers=trailers_usados, df_idx_map=df_idx_map)
         rota_ids_total.extend(rota_ids)
         trailers_restantes = [t for t in trailers_restantes if t not in trailers_usados]
         services_alocados.update(df_usado["service_reg"].unique())

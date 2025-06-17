@@ -8,7 +8,7 @@ from backend.solver.optimizer.city_mapping import (
     build_city_index_and_matrix,
     map_bases_to_indices,
 )
-from backend.solver.optimizer.setup_model import create_manager_and_model, set_cost_callback, pad_dist_matrix
+
 logger = logging.getLogger(__name__)
 
 
@@ -134,7 +134,10 @@ def setup_routing_model(
     
     if debug:
         for solver_idx, df_idx in df_idx_map.items():
-            cidade = df.iloc[df_idx]["load_city"]  # ou outro campo útil
-            logger.debug(f"🔗 Solver node {solver_idx} → DF row {df_idx} ({cidade})")
+    if not (0 <= df_idx < len(df)):
+        logger.error(f"❌ Índice inválido: df_idx={df_idx} fora do range para DataFrame de tamanho {len(df)}")
+        continue
+    row = df.iloc[df_idx]
+    logger.debug(f"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row['matricula']}, cidade={row['load_city']}")
 
     return routing, manager, starts, padded_matrix, df_idx_map
