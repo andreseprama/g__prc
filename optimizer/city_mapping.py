@@ -99,20 +99,20 @@ def build_city_index_and_matrix(
 def map_bases_to_indices(
     trailers: List[Dict[str, Any]],
     city_index_map: Dict[str, int],
+    debug: bool = False,
 ) -> Tuple[List[int], List[int]]:
     """
     Mapeia a base de cada trailer para índices na matriz de localizações.
-
-    Args:
-      trailers: Lista de trailers com campo 'base_city'.
-      city_index_map: Dicionário {cidade_normalizada: índice}.
-
-    Returns:
-      Tuple[List[int], List[int]]: Listas de índices de partida e de chegada para cada trailer.
-
-    Raises:
-      ValueError: Se não for possível mapear alguma base.
     """
+    if debug:
+        bases = set(norm(t["base_city"]) for t in trailers if t.get("base_city"))
+        ativos_com_base = [t for t in trailers if t.get("ativo") and t.get("base_city")]
+        city_keys = set(city_index_map.keys())
+        logger.debug(f"🧭 Bases nos trailers: {sorted(bases)}")
+        logger.debug(f"📌 Cidades com índice: {sorted(city_keys)}")
+        logger.debug(f"❓ Bases ausentes no city_index_map: {sorted(bases - city_keys)}")
+        logger.debug(f"🧪 {len(ativos_com_base)} trailers ativos com base_city válidos")
+
     starts: List[int] = []
     ends: List[int] = []
 

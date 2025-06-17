@@ -53,6 +53,18 @@ async def prepare_input_dataframe(
 
     trailers = await load_trailers(sess)
     trailers = [dict(t._mapping) for t in trailers]
+    trailers = [t for t in trailers if t.get("ativo") is True]  # 👈 Filtro aqui
+
+    # 🔍 Validação
+    trailers_com_base = [t for t in trailers if t.get("base_city")]
+    faltam_base = len(trailers) - len(trailers_com_base)
+    if faltam_base > 0:
+        logger.warning(f"⚠️ {faltam_base} trailer(s) ignorado(s) por não terem base_city definida")
+
+    # 🔍 Log das bases encontradas
+    bases_unicas = sorted({t["base_city"] for t in trailers})
+    logger.info(f"📍 Bases encontradas em trailers ativos: {bases_unicas}")
+    logger.info(f"✅ {len(trailers)} trailers ativos com base carregados para {dia}")
 
     if registry_trailer:
         trailers = match_trailers_by_registry_trailer(trailers, registry_trailer)
