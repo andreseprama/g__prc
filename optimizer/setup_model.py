@@ -3,6 +3,7 @@
 import logging
 from typing import List, Tuple, Dict
 from ortools.constraint_solver import pywrapcp
+import pandas as pd
 
 from backend.solver.optimizer.city_mapping import (
     build_city_index_and_matrix,
@@ -73,8 +74,8 @@ def set_cost_callback(
 
 
 def setup_routing_model(
-    df,
-    trailers,
+    df: pd.DataFrame,
+    trailers: List[dict],
     debug=False
 ) -> Tuple[
     pywrapcp.RoutingModel,
@@ -91,7 +92,6 @@ def setup_routing_model(
     if debug:
         logger.debug(f"📍 city_index_map: {city_index_map}")
 
-    # ⛔️ Valida dist_matrix
     for i, row in enumerate(dist_matrix):
         for j, val in enumerate(row):
             if not isinstance(val, int) or val < 0:
@@ -127,8 +127,6 @@ def setup_routing_model(
 
     set_cost_callback(routing, manager, padded_matrix)
     logger.info("✅ Callback de custo de distância definido")
-    
-
 
     df = df.reset_index(drop=True)
     df_idx_map = {}
@@ -142,7 +140,6 @@ def setup_routing_model(
         except Exception as e:
             logger.error(f"❌ Erro ao mapear node={node} → solver_idx: {e}")
 
-    
     if debug:
         for solver_idx, df_idx in df_idx_map.items():
             if not (0 <= df_idx < len(df)):
@@ -150,6 +147,5 @@ def setup_routing_model(
                 continue
             row = df.iloc[df_idx]
             logger.debug(f"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row['matricula']}, cidade={row['load_city']}")
-
 
     return routing, manager, starts, padded_matrix, df_idx_map

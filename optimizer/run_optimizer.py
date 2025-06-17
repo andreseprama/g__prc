@@ -9,7 +9,7 @@ from ortools.constraint_solver import pywrapcp
 from itertools import zip_longest, chain
 
 from .prepare_input import prepare_input_dataframe
-from .subset_selection import selecionar_servicos_e_trailers_compatíveis
+from .subset_selection import selecionar_servicos_e_trailers_compativeis
 from .setup_model import setup_routing_model
 from .constraints import apply_all_constraints
 from .persist_results import persist_routes
@@ -103,7 +103,7 @@ async def optimize(
         if df_restante.empty or not trailers_restantes:
             continue
 
-        df_usado, df_restante, trailers_usados = selecionar_servicos_e_trailers_compatíveis(df_restante, trailers_restantes)
+        df_usado, df_restante, trailers_usados, _ = selecionar_servicos_e_trailers_compativeis(df_restante, trailers_restantes)
         if df_usado.empty or not trailers_usados:
             continue
 
