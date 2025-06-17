@@ -118,12 +118,19 @@ def map_bases_to_indices(
 
     for trailer in trailers:
         trailer_id = trailer.get("id", "desconhecido")
+
+        if not trailer.get("ativo", False):
+            logger.debug(f"🚫 Trailer {trailer_id} inativo; ignorado.")
+            continue
+
         base_city = trailer.get("base_city")
         if not base_city:
             logger.warning(f"⚠️ Trailer {trailer_id} sem base_city definido; ignorado.")
             continue
 
         base_norm = norm(base_city)
+        logger.debug(f"🔍 Trailer ID={trailer_id}, base='{base_city}', base_norm='{base_norm}', índice encontrado={city_index_map.get(base_norm)}")
+
         idx = city_index_map.get(base_norm)
         if idx is None:
             raise ValueError(
