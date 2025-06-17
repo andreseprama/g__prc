@@ -17,6 +17,7 @@ from .persist_results import persist_routes
 from backend.solver.geocode import fetch_and_store_city
 from backend.solver.utils import norm
 from backend.solver.optimizer.city_mapping import get_unique_cities
+from backend.solver.optimizer.solve_model import solve_with_params
 
 faulthandler.enable()
 logger = logging.getLogger(__name__)
@@ -79,13 +80,9 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
             enable_pickup_pairs=False,
         )
 
-        search = pywrapcp.DefaultRoutingSearchParameters()
-        search.log_search = True
-        search.time_limit.seconds = 60
-        search.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-        search.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+        solution = solve_with_params(routing, manager, time_limit_sec=120, log_search=True)
 
-        solution = routing.SolveWithParameters(search)
+        
         if solution is None:
             logger.warning("❌ Nenhuma solução encontrada na rodada %d.", rodada)
             break
