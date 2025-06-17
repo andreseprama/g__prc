@@ -133,9 +133,10 @@ def map_bases_to_indices(
 
         idx = city_index_map.get(base_norm)
         if idx is None:
-            raise ValueError(
-                f"🚫 Base '{base_norm}' do trailer ID {trailer_id} não está em city_index_map."
+            logger.warning(
+                f"⚠️ Base '{base_norm}' do trailer ID {trailer_id} não está na matriz de cidades (city_index_map). Trailer ignorado."
             )
+            continue
 
         starts.append(idx)
         ends.append(idx)

@@ -98,6 +98,7 @@ async def load_trailers(sess: AsyncSession) -> list:
                 t.id,
                 t.registry_trailer ,
                 t.base_city,
+                t.ativo,
                 tc.id AS cat_id,
                 tc.ceu_max,
                 tc.ligeiro_max,
