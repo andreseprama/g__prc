@@ -85,3 +85,10 @@ def build_distance_matrix(locations: List[str]) -> List[List[float]]:
 
     logger.debug(f"➡️ Distância calculada para {n} locais (matriz {n}x{n})")
     return mat
+
+
+def get_coords(city: str) -> Tuple[float, float] | None:
+    try:
+        return _coords(city)
+    except ValueError:
+        return None
