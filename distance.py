@@ -4,6 +4,7 @@ from typing import Dict, Tuple, List
 import unicodedata
 import logging
 from geopy.distance import geodesic  # type: ignore
+import pandas as pd 
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,11 @@ def _coords(city: str) -> Tuple[float, float]:
             f"Coordenadas de cidade desconhecida: '{city}' (normalizada como '{norm_name}')"
         )
     return _COORDS_CACHE[norm_name]
+
+def coordenada_real(row, tipo="load"):
+    if row[f"{tipo}_is_base"] and pd.notnull(row["scheduled_base"]):
+        return row["scheduled_base"]
+    return row[f"{tipo}_city"]
 
 
 def _distance_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:

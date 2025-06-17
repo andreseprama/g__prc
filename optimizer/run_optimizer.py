@@ -46,6 +46,7 @@ async def geocode_all_unique_cities(sess, df):
 
 async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str] = None, categoria_filtrada: Optional[List[str]] = None, debug: bool = False, safe: bool = False, max_voltas: int = 10) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
+    logger.debug(f"🧾 Serviços únicos no input: {df['service_reg'].nunique()}")
     if df.empty or not trailers:
         logger.warning("⚠️ Sem dados elegíveis ou trailers disponíveis.")
         return []
@@ -56,6 +57,13 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
     rodada = 1
     df_restante = df
     trailers_restantes = trailers
+    
+    # ⚠️ Validar: Cada service_reg deve estar presente em no máximo um rota_id
+    duplicates = df.groupby("service_reg")["rota_id"].nunique()
+    invalid_services = duplicates[duplicates > 1]
+
+    if not invalid_services.empty:
+        raise ValueError(f"❌ Serviços em mais de uma rota: {invalid_services}")
 
     while not df_restante.empty and trailers_restantes and rodada <= max_voltas:
         df_usado, df_restante, trailers_usados = selecionar_servicos_e_trailers_compatíveis(df_restante, trailers_restantes)
