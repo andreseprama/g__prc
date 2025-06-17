@@ -13,7 +13,6 @@ def selecionar_servicos_e_trailers_compatíveis(
     if df.empty or not trailers:
         return df, df, []
 
-    # 1. Preparar capacidades
     trailer_caps = []
     for i, t in enumerate(trailers):
         try:
@@ -23,24 +22,23 @@ def selecionar_servicos_e_trailers_compatíveis(
         trailer_caps.append({"idx": i, "cap": cap, "restante": cap})
         logger.warning("🚛 Trailer %d: ceu_max=%s → cap_int=%d", i, t.get("ceu_max"), cap)
 
-    # 2. Agrupar serviços por service_reg
-    grouped = df.groupby("service_reg")
+    group_cols = ["id", "registry"] if "registry" in df.columns else ["id"]
+    grouped = df.groupby(group_cols)
+
     service_blocks = []
-    for service_reg, group in grouped:
+    for group_key, group in grouped:
         total_ceu = group["ceu_int"].sum()
         service_blocks.append({
-            "service_reg": service_reg,
+            "service_reg": group_key,
             "df": group,
             "ceu": total_ceu
         })
 
-    # 3. Ordenar serviços por CEU (decrescente)
     service_blocks.sort(key=lambda s: -s["ceu"])
 
     used_services = []
     used_trailer_idxs = set()
 
-    # 4. Atribuição gulosa: cada serviço tenta entrar num trailer que o suporta
     for block in service_blocks:
         for trailer in trailer_caps:
             usado = trailer["cap"] - trailer["restante"]
@@ -51,14 +49,19 @@ def selecionar_servicos_e_trailers_compatíveis(
                 trailer["restante"] -= block["ceu"]
                 used_services.append(block["df"])
                 used_trailer_idxs.add(trailer["idx"])
-                logger.warning("✅ Alocado service_reg %s no trailer %d", block["service_reg"], trailer["idx"])
+                logger.warning("✅ Alocado %s no trailer %d", block["service_reg"], trailer["idx"])
                 break
         else:
-            logger.warning("❌ service_reg %s não coube em nenhum trailer", block["service_reg"])
+            logger.warning("❌ %s não coube em nenhum trailer", block["service_reg"])
 
-    # 5. Construir resultados
     df_usado = pd.concat(used_services) if used_services else pd.DataFrame(columns=df.columns)
-    df_restante = df.loc[~df["service_reg"].isin(df_usado["service_reg"])] if not df_usado.empty else df
+
+    if not df_usado.empty:
+        chave = ["id", "registry"] if "registry" in df_usado.columns else ["id"]
+        df_restante = df.merge(df_usado[chave], how="left", indicator=True)
+        df_restante = df_restante[df_restante["_merge"] == "left_only"].drop(columns="_merge")
+    else:
+        df_restante = df
 
     trailers_usados = [trailers[i] for i in sorted(used_trailer_idxs)]
 
