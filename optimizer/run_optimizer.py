@@ -1,4 +1,4 @@
-# backend/solver/optimizer/run_optimizer.py (com geocodificação antecipada e correções finais)
+# backend/solver/optimizer/run_optimizer.py (com geocodificação antecipada, rotas, logs e capacidade delegada ao solver)
 
 from __future__ import annotations
 import logging
@@ -76,7 +76,7 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
             depot_indices=starts,
             distance_matrix=dist_matrix,
             constraint_weights={"ceu": 1.0},
-            enable_pickup_pairs=False,
+            enable_pickup_pairs=True,
         )
 
         search = pywrapcp.DefaultRoutingSearchParameters()
@@ -96,16 +96,29 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
         for v in range(len(trailers_usados)):
             idx = routing.Start(v)
             path = []
-            distance = 0
+            total_km = 0
             while not routing.IsEnd(idx):
                 node = manager.IndexToNode(idx)
                 path.append(node)
                 logger.debug(f"🚏 Veículo {v} → nó {node} = {unique_cities[node]}")
                 next_idx = solution.Value(routing.NextVar(idx))
-                distance += routing.GetArcCostForVehicle(idx, next_idx, v)
+                if not routing.IsEnd(next_idx):
+                    from_node = manager.IndexToNode(idx)
+                    to_node = manager.IndexToNode(next_idx)
+                    total_km += dist_matrix[from_node][to_node]
                 idx = next_idx
+            
             if path:
-                logger.info(f"🛣️ Veículo {v} → distância total = {distance} km")
+                if debug:
+                    agrupamento = {}
+                    for node in path:
+                        cidade = unique_cities[node]
+                        agrupamento[cidade] = agrupamento.get(cidade, 0) + 1
+                    agrupado_str = ", ".join(f"{c}: {n}" for c, n in agrupamento.items())
+                    logger.debug(f"🧩 Veículo {v} → agrupamento por cidade: {agrupado_str}")
+                    logger.debug(f"📍 Veículo {v} → sequência: " + " → ".join(unique_cities[n] for n in path))
+
+                logger.info(f"🛣️ Veículo {v} → rota = {path} → Total km: {total_km:.2f}")
                 routes.append((v, path))
 
         rota_ids = await persist_routes(sess, dia, df_usado, routes, trailer_starts=starts, trailers=trailers_usados)

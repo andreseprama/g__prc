@@ -117,3 +117,26 @@ async def _load_dataframe(
     df["load_city"] = df["load_city"].astype(str)
     df["unload_city"] = df["unload_city"].astype(str)
     return df
+
+
+def group_similar_services(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Agrupa serviços que têm o mesmo load/unload/scheduled_base e soma ceu_int.
+    """
+    grouped = (
+        df.groupby(["load_city", "unload_city", "scheduled_base"], dropna=False)
+        .agg({
+            "ceu_int": "sum",
+            "id": "first",
+            "matricula": "first",
+            "vehicle_category_name": "first",
+            "expected_delivery_date": "min",
+            "expected_delivery_date_manual": "first",
+            "force_return": "first",
+            "load_is_base": "first",
+            "unload_is_base": "first",
+        })
+        .reset_index()
+    )
+    grouped["was_grouped"] = True
+    return grouped
