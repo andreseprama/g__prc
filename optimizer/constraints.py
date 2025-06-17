@@ -16,28 +16,40 @@ def apply_all_constraints(
     trailers: List[dict],
     n_services: int,
     depot_indices: List[int],
-    distance_matrix,  # não usado, reservado para futuro
+    distance_matrix: List[List[int]],  # ainda não usado
     constraint_weights: dict[str, float],
     *,
     enable_pickup_pairs: bool = True,
 ) -> None:
-    """
-    Aplica todas as constraints de capacidade e precedência:
+    from backend.solver.optimizer.city_mapping import map_city_indices
 
-    1) CEU, LIG, FUR, ROD como dimensões de capacidade
-    2) Pickup → Delivery: mesma viatura, pickup precede delivery
-    """
-    # ——— 1) Capacidade ———
+    # Capacidade (CEU)
     cb_indices, _ = create_demand_callbacks(df, manager, routing, depot_indices)
     add_dimensions_and_constraints(routing, trailers, cb_indices)
 
-    # ——— 2) Pickup-delivery ———
-    if enable_pickup_pairs:
-        ceu_dim = routing.GetDimensionOrDie("CEU")
-        for i in range(n_services):
-            p_idx = manager.NodeToIndex(1 + i)
-            d_idx = manager.NodeToIndex(1 + n_services + i)
+    if not enable_pickup_pairs:
+        return
+
+    ceu_dim = routing.GetDimensionOrDie("CEU")
+
+    # Mapeamento cidades → índices
+    all_cities = df["load_city"].tolist() + df["unload_city"].tolist()
+    all_cities = list({c for c in all_cities if isinstance(c, str)})
+    city_index_map = map_city_indices([c.upper().strip() for c in all_cities])
+
+    for i, row in df.iterrows():
+        load = row["load_city"]
+        unload = row["unload_city"]
+
+        try:
+            p_node = city_index_map[norm(load)]
+            d_node = city_index_map[norm(unload)]
+
+            p_idx = manager.NodeToIndex(p_node)
+            d_idx = manager.NodeToIndex(d_node)
 
             routing.AddPickupAndDelivery(p_idx, d_idx)
             routing.solver().Add(routing.VehicleVar(p_idx) == routing.VehicleVar(d_idx))
             routing.solver().Add(ceu_dim.CumulVar(p_idx) <= ceu_dim.CumulVar(d_idx))
+        except Exception as e:
+            print(f"❌ Erro aplicando pickup-delivery para linha {i}: {e}")
