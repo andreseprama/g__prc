@@ -7,7 +7,7 @@ from ortools.constraint_solver import pywrapcp
 from backend.solver.optimizer.city_mapping import (
     get_unique_cities,
     map_city_indices,
-    build_distance_matrix,
+    build_city_index_and_matrix,
     map_bases_to_indices,
 )
 
@@ -92,7 +92,7 @@ def setup_routing_model(
     print(f"➡️ Índices de partida: {starts}")
     print(f"➡️ Índices de chegada: {ends}")
 
-    dist_matrix = build_distance_matrix(locations)
+    locations, city_index_map, dist_matrix = build_city_index_and_matrix(df, trailers)
     print(
         f"➡️ Tamanho original do dist_matrix: {len(dist_matrix)}x{len(dist_matrix[0])}"
     )
