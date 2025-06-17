@@ -1,16 +1,14 @@
 # backend/solver/optimizer/setup_model.py
 
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from ortools.constraint_solver import pywrapcp
 
 from backend.solver.optimizer.city_mapping import (
-    get_unique_cities,
-    map_city_indices,
     build_city_index_and_matrix,
     map_bases_to_indices,
 )
-
+from backend.solver.optimizer.setup_model import create_manager_and_model, set_cost_callback, pad_dist_matrix
 logger = logging.getLogger(__name__)
 
 
@@ -79,16 +77,21 @@ def setup_routing_model(
     trailers,
     debug=False
 ) -> Tuple[
-    pywrapcp.RoutingModel, pywrapcp.RoutingIndexManager, List[int], List[List[int]]
+    pywrapcp.RoutingModel,
+    pywrapcp.RoutingIndexManager,
+    List[int],
+    List[List[int]],
+    Dict[int, int]
 ]:
     print("🔥 setup_routing_model foi chamado")
+
     locations, city_index_map, dist_matrix = build_city_index_and_matrix(df, trailers)
 
     logger.info(f"➡️ Cidades únicas utilizadas ({len(locations)}): {locations}")
     if debug:
         logger.debug(f"📍 city_index_map: {city_index_map}")
 
-    # 🚨 Validação da dist_matrix
+    # ⛔️ Valida dist_matrix
     for i, row in enumerate(dist_matrix):
         for j, val in enumerate(row):
             if not isinstance(val, int) or val < 0:
@@ -100,17 +103,16 @@ def setup_routing_model(
     starts, ends = map_bases_to_indices(trailers, city_index_map)
     logger.debug(f"🚚 Starts: {starts} | Ends: {ends}")
     logger.debug(f"📊 city_index_map: {city_index_map}")
-    logger.debug(f"🧮 Total locations: {len(locations)}")
+    logger.debug(f"🧼 Total locations: {len(locations)}")
     if debug and dist_matrix:
-        logger.debug(f"🧪 Exemplo dist_matrix[0][:5]: {dist_matrix[0][:5]}")
+        logger.debug(f"🗪 Exemplo dist_matrix[0][:5]: {dist_matrix[0][:5]}")
 
     manager, routing = create_manager_and_model(locations, starts, ends)
-    logger.debug(f"🧠 manager.GetNumberOfNodes() = {manager.GetNumberOfNodes()}")
-    logger.debug(f"🧠 manager.GetNumberOfIndices() = {manager.GetNumberOfIndices()}")
+    logger.debug(f"🧐 manager.GetNumberOfNodes() = {manager.GetNumberOfNodes()}")
+    logger.debug(f"🧐 manager.GetNumberOfIndices() = {manager.GetNumberOfIndices()}")
 
     padded_matrix = pad_dist_matrix(dist_matrix, manager.GetNumberOfNodes())
 
-    # 🚨 Verificação de integridade da matriz padded_matrix
     for i, row in enumerate(padded_matrix):
         for j, val in enumerate(row):
             if not isinstance(val, int) or val < 0:
@@ -119,12 +121,20 @@ def setup_routing_model(
                     logger.error(f"↪️ Cidades: {locations[i]} → {locations[j]}")
                 raise ValueError(f"Distância inválida em padded_matrix[{i}][{j}] = {val}")
 
-    # 👇 Prévia segura da matriz se debug ativado
     if debug:
         preview_rows = padded_matrix[:min(5, len(padded_matrix))]
         logger.debug(f"🔍 Preview padded_matrix (máx 5 linhas): {preview_rows}")
 
     set_cost_callback(routing, manager, padded_matrix)
     logger.info("✅ Callback de custo de distância definido")
+    
 
-    return routing, manager, starts, padded_matrix
+
+    df_idx_map = {manager.NodeToIndex(i): i for i in range(manager.GetNumberOfNodes())}
+    
+    if debug:
+        for solver_idx, df_idx in df_idx_map.items():
+            cidade = df.iloc[df_idx]["load_city"]  # ou outro campo útil
+            logger.debug(f"🔗 Solver node {solver_idx} → DF row {df_idx} ({cidade})")
+
+    return routing, manager, starts, padded_matrix, df_idx_map
