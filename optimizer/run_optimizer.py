@@ -1,4 +1,4 @@
-# backend/solver/optimizer/run_optimizer.py (com geocodificação antecipada, rotas, logs e capacidade delegada ao solver)
+# backend/solver/optimizer/run_optimizer.py
 
 from __future__ import annotations
 import logging
@@ -18,10 +18,11 @@ from backend.solver.geocode import fetch_and_store_city
 from backend.solver.utils import norm
 from backend.solver.optimizer.city_mapping import get_unique_cities
 from backend.solver.optimizer.solve_model import solve_with_params
+from backend.solver.distance import _norm, get_coords, coordenada_real
+from backend.solver.optimizer.cluster import agrupar_por_cluster_geografico
 
 faulthandler.enable()
 logger = logging.getLogger(__name__)
-
 
 def _get_ceu_capacities(trailers: List[dict]) -> List[int]:
     capacities = []
@@ -34,34 +35,55 @@ def _get_ceu_capacities(trailers: List[dict]) -> List[int]:
             capacities.append(0)
     return capacities
 
-
 async def geocode_all_unique_cities(sess, df):
-    cities = set(norm(c) for c in df["load_city"].tolist() + df["unload_city"].tolist())
-    for city in cities:
+    cidades = set()
+    for _, row in df.iterrows():
+        # Load
+        if row["load_is_base"] and pd.notnull(row["scheduled_base"]):
+            cidades.add(_norm(row["scheduled_base"]))
+        else:
+            cidades.add(_norm(row["load_city"]))
+        # Unload
+        if row["unload_is_base"] and pd.notnull(row["scheduled_base"]):
+            cidades.add(_norm(row["scheduled_base"]))
+        else:
+            cidades.add(_norm(row["unload_city"]))
+
+    for cidade in cidades:
         try:
-            await fetch_and_store_city(sess, city)
+            await fetch_and_store_city(sess, cidade)
         except Exception as e:
-            logger.warning(f"⚠️ Falha ao geocodificar {city}: {e}")
+            logger.warning(f"⚠️ Falha ao geocodificar {cidade}: {e}")
 
-
-async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str] = None, categoria_filtrada: Optional[List[str]] = None, debug: bool = False, safe: bool = False, max_voltas: int = 10) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
+async def optimize(
+    sess: AsyncSession,
+    dia: date,
+    registry_trailer: Optional[str] = None,
+    categoria_filtrada: Optional[List[str]] = None,
+    debug: bool = False,
+    safe: bool = False,
+    max_voltas: int = 10
+) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
-    logger.debug(f"🧾 Serviços únicos no input: {df['service_reg'].nunique()}")
+    logger.debug(f"🗾 Serviços únicos no input: {df['service_reg'].nunique()}")
+
     if df.empty or not trailers:
         logger.warning("⚠️ Sem dados elegíveis ou trailers disponíveis.")
         return []
 
     await geocode_all_unique_cities(sess, df)
 
+    coords_map = {
+        k: get_coords(_norm(k)) for k in df["scheduled_base"].dropna().unique()
+    }
+
     rota_ids_total = []
     rodada = 1
     df_restante = df
     trailers_restantes = trailers
-    
-    # ⚠️ Validar: Cada service_reg deve estar presente em no máximo um rota_id
+
     duplicates = df.groupby("service_reg")["rota_id"].nunique()
     invalid_services = duplicates[duplicates > 1]
-
     if not invalid_services.empty:
         raise ValueError(f"❌ Serviços em mais de uma rota: {invalid_services}")
 
@@ -90,7 +112,6 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
 
         solution = solve_with_params(routing, manager, time_limit_sec=120, log_search=True)
 
-        
         if solution is None:
             logger.warning("❌ Nenhuma solução encontrada na rodada %d.", rodada)
             break
@@ -113,7 +134,7 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
                     total_km += dist_matrix[from_node][to_node]
                 idx = next_idx
             if path:
-                logger.info(f"🚣️ Veículo {v} → rota = {path} → Total km: {total_km:.2f}")
+                logger.info(f"🛳️ Veículo {v} → rota = {path} → Total km: {total_km:.2f}")
                 if debug:
                     agrupamento = {}
                     for node in path:
