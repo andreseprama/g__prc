@@ -131,14 +131,25 @@ def setup_routing_model(
 
 
     df = df.reset_index(drop=True)
-    df_idx_map = {manager.NodeToIndex(i): i for i in range(len(df))}
+    df_idx_map = {}
+    for node in range(manager.GetNumberOfNodes()):
+        try:
+            solver_idx = manager.NodeToIndex(node)
+            if 0 <= node < len(df):
+                df_idx_map[solver_idx] = node
+            else:
+                logger.warning(f"⚠️ Ignorando node={node}, fora do range de df (len={len(df)})")
+        except Exception as e:
+            logger.error(f"❌ Erro ao mapear node={node} → solver_idx: {e}")
+
     
-if debug:
-    for solver_idx, df_idx in df_idx_map.items():
-        if not (0 <= df_idx < len(df)):
-            logger.error(f\"❌ Índice inválido: df_idx={df_idx} fora do range para DataFrame de tamanho {len(df)}\")
-            continue
-        row = df.iloc[df_idx]
-        logger.debug(f\"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row['matricula']}, cidade={row['load_city']}\")
+    if debug:
+        for solver_idx, df_idx in df_idx_map.items():
+            if not (0 <= df_idx < len(df)):
+                logger.error(f"❌ Índice inválido: df_idx={df_idx} fora do range (df tem {len(df)} linhas)")
+                continue
+            row = df.iloc[df_idx]
+            logger.debug(f"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row['matricula']}, cidade={row['load_city']}")
+
 
     return routing, manager, starts, padded_matrix, df_idx_map
