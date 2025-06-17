@@ -29,6 +29,7 @@ async def prepare_input_dataframe(
     sess: AsyncSession,
     dia: date,
     registry_trailer: Optional[str] = None,
+    debug: bool = False,
 ) -> Tuple[pd.DataFrame, List[dict], Dict[str, str]]:
     """
     Prepara DataFrame e trailers para otimização:
@@ -53,16 +54,24 @@ async def prepare_input_dataframe(
 
     trailers = await load_trailers(sess)
     trailers = [dict(t._mapping) for t in trailers]
-    trailers = [t for t in trailers if t.get("ativo") is True]  # 👈 Filtro aqui
 
-    # 🔍 Validação
-    trailers_com_base = [t for t in trailers if t.get("base_city")]
-    faltam_base = len(trailers) - len(trailers_com_base)
-    if faltam_base > 0:
-        logger.warning(f"⚠️ {faltam_base} trailer(s) ignorado(s) por não terem base_city definida")
+    for t in trailers:
+        t["base_city"] = (t.get("base_city") or "").strip()
+        t["ceu_max"] = float(t.get("ceu_max") or 6.0)
 
-    # 🔍 Log das bases encontradas
-    bases_unicas = sorted({t["base_city"] for t in trailers})
+    trailers_com_base = [t for t in trailers if t.get("ativo") and t.get("base_city")]
+
+    if debug:
+        logger.debug(f"🔍 Trailers brutos: {trailers}")
+        logger.debug(f"🧪 {len(trailers_com_base)} trailers ativos com base_city válidos")
+
+    ignorados = len(trailers) - len(trailers_com_base)
+    if ignorados > 0:
+        logger.warning(f"⚠️ {ignorados} trailer(s) ignorado(s) por não terem base_city definida ou estarem inativos")
+
+    trailers = trailers_com_base
+
+    bases_unicas = sorted({norm(t["base_city"]) for t in trailers})
     logger.info(f"📍 Bases encontradas em trailers ativos: {bases_unicas}")
     logger.info(f"✅ {len(trailers)} trailers ativos com base carregados para {dia}")
 
@@ -72,10 +81,9 @@ async def prepare_input_dataframe(
             logger.warning("❌ Nenhum trailer com matrícula %s", registry_trailer)
             return pd.DataFrame(), [], base_map
 
-    # --- Gera chave única service_reg ---
     df = make_service_reg(df)
-
     return df, trailers, base_map
+
 
 
 async def _load_dataframe(
