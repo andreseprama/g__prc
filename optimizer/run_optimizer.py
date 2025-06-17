@@ -1,11 +1,12 @@
 from __future__ import annotations
 import logging
 from datetime import date
-from typing import Optional, List, Tuple, Union
+from typing import Optional, List, Tuple, Union, Set
 import faulthandler
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
-from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+from ortools.constraint_solver import pywrapcp
+from itertools import zip_longest, chain
 
 from .prepare_input import prepare_input_dataframe
 from .subset_selection import selecionar_servicos_e_trailers_compatíveis
@@ -21,7 +22,6 @@ from backend.solver.optimizer.cluster import agrupar_por_cluster_geografico
 
 faulthandler.enable()
 logger = logging.getLogger(__name__)
-
 
 def _get_ceu_capacities(trailers: List[dict]) -> List[int]:
     capacities = []
@@ -56,7 +56,7 @@ async def geocode_all_unique_cities(sess, df):
 
 async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str] = None, categoria_filtrada: Optional[List[str]] = None, debug: bool = False, safe: bool = False, max_voltas: int = 10) -> Union[List[int], Tuple[List[int], pd.DataFrame]]:
     df, trailers, base_map = await prepare_input_dataframe(sess, dia, registry_trailer)
-    logger.debug(f"📾 Serviços únicos no input: {df['service_reg'].nunique()}")
+    logger.debug(f"📞 Serviços únicos no input: {df['service_reg'].nunique()}")
     if df.empty or not trailers:
         logger.warning("⚠️ Sem dados elegíveis ou trailers disponíveis.")
         return []
@@ -73,18 +73,24 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
 
     rota_ids_total = []
     trailers_restantes = trailers
+    services_alocados: Set[str] = set()
 
     duplicates = df.groupby("service_reg")["rota_id"].nunique()
     invalid_services = duplicates[duplicates > 1]
     if not invalid_services.empty:
         raise ValueError(f"❌ Serviços em mais de uma rota: {invalid_services}")
 
-    
     clusters_load = agrupar_por_cluster_geografico(df, tipo="load", n_clusters=4)
     clusters_unload = agrupar_por_cluster_geografico(df, tipo="unload", n_clusters=2)
 
+    # Intercalar os clusters
+    clusters = list(chain.from_iterable(zip_longest(clusters_load, clusters_unload)))
+    clusters = [c for c in clusters if c is not None]
+
     for rodada, cluster_df in enumerate(clusters, start=1):
-        df_restante = cluster_df
+        df_restante = cluster_df[~cluster_df["service_reg"].isin(services_alocados)].reset_index(drop=True)
+        logger.info(f"📦 Cluster {rodada}: {len(df_restante)} serviços restantes para alocar")
+
         if df_restante.empty or not trailers_restantes:
             continue
 
@@ -132,7 +138,7 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
                     total_km += dist_matrix[from_node][to_node]
                 idx = next_idx
             if path:
-                logger.info(f"🚣️ Veículo {v} → rota = {path} → Total km: {total_km:.2f}")
+                logger.info(f"🛳️ Veículo {v} → rota = {path} → Total km: {total_km:.2f}")
                 if debug:
                     agrupamento = {}
                     for node in path:
@@ -145,5 +151,6 @@ async def optimize(sess: AsyncSession, dia: date, registry_trailer: Optional[str
         rota_ids = await persist_routes(sess, dia, df_usado, routes, trailer_starts=starts, trailers=trailers_usados)
         rota_ids_total.extend(rota_ids)
         trailers_restantes = [t for t in trailers_restantes if t not in trailers_usados]
+        services_alocados.update(df_usado["service_reg"].unique())
 
     return rota_ids_total if not debug else (rota_ids_total, df)
