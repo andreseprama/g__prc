@@ -84,7 +84,18 @@ def setup_routing_model(
     List[List[int]],
     Dict[int, int]
 ]:
-    print("🔥 setup_routing_model foi chamado")
+    """
+    Setup do modelo de roteamento com OR-Tools.
+
+    Args:
+        df (pd.DataFrame): DataFrame contendo as entregas.
+        trailers (List[dict]): Lista de dicionários com informações dos trailers.
+        debug (bool): Flag para logs detalhados.
+
+    Returns:
+        Tuple: routing, manager, starts, padded_matrix, df_idx_map
+    """
+    print("\U0001F525 setup_routing_model foi chamado")
 
     locations, city_index_map, dist_matrix = build_city_index_and_matrix(df, trailers)
 
@@ -105,7 +116,10 @@ def setup_routing_model(
     logger.debug(f"📊 city_index_map: {city_index_map}")
     logger.debug(f"🧼 Total locations: {len(locations)}")
     if debug and dist_matrix:
-        logger.debug(f"🗪 Exemplo dist_matrix[0][:5]: {dist_matrix[0][:5]}")
+        logger.debug(f"🗟️ Exemplo dist_matrix[0][:5]: {dist_matrix[0][:5]}")
+
+    if not locations:
+        raise ValueError("Lista de 'locations' está vazia — verifique entradas do DataFrame.")
 
     manager, routing = create_manager_and_model(locations, starts, ends)
     logger.debug(f"🧐 manager.GetNumberOfNodes() = {manager.GetNumberOfNodes()}")
@@ -130,13 +144,13 @@ def setup_routing_model(
 
     df = df.reset_index(drop=True)
     df_idx_map = {}
+    max_valid_node = len(df) - 1
     for node in range(manager.GetNumberOfNodes()):
+        if node > max_valid_node:
+            continue
         try:
             solver_idx = manager.NodeToIndex(node)
-            if 0 <= node < len(df):
-                df_idx_map[solver_idx] = node
-            else:
-                logger.warning(f"⚠️ Ignorando node={node}, fora do range de df (len={len(df)})")
+            df_idx_map[solver_idx] = node
         except Exception as e:
             logger.error(f"❌ Erro ao mapear node={node} → solver_idx: {e}")
 
@@ -146,6 +160,7 @@ def setup_routing_model(
                 logger.error(f"❌ Índice inválido: df_idx={df_idx} fora do range (df tem {len(df)} linhas)")
                 continue
             row = df.iloc[df_idx]
-            logger.debug(f"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row['matricula']}, cidade={row['load_city']}")
+            logger.debug(f"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row.get('matricula')}, cidade={row.get('load_city')}")
 
     return routing, manager, starts, padded_matrix, df_idx_map
+

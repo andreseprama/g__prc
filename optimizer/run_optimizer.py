@@ -125,7 +125,13 @@ async def optimize(
             enable_pickup_pairs=True,
         )
 
-        solution = solve_with_params(routing, manager, time_limit_sec=120, log_search=True)
+        solution = solve_with_params(
+            routing,
+            manager,
+            time_limit_sec=120,
+            log_search=True,
+            first_solution_strategy="cheapest"  # novo parâmetro para configurar PATH_CHEAPEST_ARC
+        )
         if solution is None:
             logger.warning(f"❌ Nenhuma solução encontrada na rodada {rodada}.")
             continue
