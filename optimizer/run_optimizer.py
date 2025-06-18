@@ -108,6 +108,18 @@ async def optimize(
         if df_usado.empty or not trailers_usados:
             logger.info(f"⛔ Sem trailers compatíveis para rodada {rodada} ({len(df_restante)} serviços)")
             continue
+        
+        for t in trailers_usados:
+            logger.info(f"🚚 Trailer selecionado: ID={t.get('id')} | base={t.get('base_city')} | CEU={t.get('ceu_max')}")
+
+        for _, row in df_usado.iterrows():
+            logger.info(f"🧾 Serviço: ID={row.get('id')} | Reg={row.get('service_reg')} | Matrícula={row.get('registry')} | Base={row.get('scheduled_base')}")
+
+        logger.info("📦 Serviços a transportar nesta rodada:")
+        for _, row in df_usado.iterrows():
+            logger.info(
+                f"🧾 ID={row.get('id')}, REG={row.get('service_reg')}, MAT={row.get('registry')}, BASE={row.get('scheduled_base')}, CIDADE={row.get('load_city')} → {row.get('unload_city')}, CEU={row.get('ceu_int')}"
+            )
 
         try:
             routing, manager, starts, dist_matrix, df_idx_map = setup_routing_model(df_usado, trailers_usados, debug=debug)
