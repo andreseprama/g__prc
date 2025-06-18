@@ -54,12 +54,11 @@ def norm(texto: str) -> str:
 
 
 def haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
-    φ1, φ2 = math.radians(a[0]), math.radians(b[0])
-    Δφ, Δλ = math.radians(b[0] - a[0]), math.radians(b[1] - a[1])
-    sφ, sλ = math.sin(Δφ / 2), math.sin(Δλ / 2)
-    h = sφ * sφ + math.cos(φ1) * math.cos(φ2) * sλ * sλ
-    return 2 * 6371.0 * math.asin(math.sqrt(h))
-
+    lat1, lon1 = math.radians(a[0]), math.radians(a[1])
+    lat2, lon2 = math.radians(b[0]), math.radians(b[1])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a_ = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+    return 2 * 6371.0 * math.asin(math.sqrt(a_))
 
 def build_int_distance_matrix(
     locations: List[str],
@@ -71,8 +70,10 @@ def build_int_distance_matrix(
         for j in range(n):
             if i == j:
                 continue
-            mat[i][j] = int(
-                round(haversine_km(coords_map[locations[i]], coords_map[locations[j]]))
-            )
+            try:
+                mat[i][j] = int(round(haversine_km(coords_map[locations[i]], coords_map[locations[j]])))
+            except KeyError as e:
+                logger.warning(f"⚠️ Coordenadas ausentes para {e.args[0]}, usando 0km")
+                mat[i][j] = 0
     logger.debug(f"↔️ Matriz {n}×{n} construída")
     return mat

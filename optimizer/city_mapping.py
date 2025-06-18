@@ -3,10 +3,20 @@
 from typing import List, Tuple, Dict, Any
 import logging
 
-from backend.solver.utils import norm
+from backend.solver.utils import norm, haversine_km
 from backend.solver.distance import build_distance_matrix as _build_distance_matrix
+import math
 
 logger = logging.getLogger(__name__)
+
+def haversine_km(a: Tuple[float, float], b: Tuple[float, float]) -> float:
+    lat1, lon1 = math.radians(a[0]), math.radians(a[1])
+    lat2, lon2 = math.radians(b[0]), math.radians(b[1])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a_ = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+    return 2 * 6371.0 * math.asin(math.sqrt(a_))
+
+
 
 
 def get_unique_cities(df, trailers: List[Dict[str, Any]]) -> List[str]:
