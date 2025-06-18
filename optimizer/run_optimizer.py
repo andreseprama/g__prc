@@ -89,7 +89,9 @@ async def optimize(
         duplicates = df.groupby("service_reg")["rota_id"].nunique()
         invalid_services = duplicates[duplicates > 1]
         if not invalid_services.empty:
-            raise ValueError(f"❌ Serviços em mais de uma rota: {invalid_services}")
+            raise ValueError(f"❌ Serviços em mais de uma rota: {invalid_services.to_dict()}")
+    else:
+        logger.warning("⚠️ Coluna 'rota_id' ausente no DataFrame. Validação de duplicados ignorada.")
 
     clusters_load = agrupar_por_cluster_geografico(df, tipo="load", n_clusters=4)
     clusters_unload = agrupar_por_cluster_geografico(df, tipo="unload", n_clusters=2)
