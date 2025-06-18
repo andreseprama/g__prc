@@ -212,8 +212,14 @@ async def optimize(
 
         rota_ids = await persist_routes(sess, dia, df_usado, routes, trailer_starts=starts, trailers=trailers_usados, df_idx_map=df_idx_map)
         rota_ids_total.extend(rota_ids)
+        df.loc[df_usado.index, "rota_id"] = df_usado["rota_id"] 
         trailers_restantes = [t for t in trailers_restantes if t not in trailers_usados]
         services_alocados.update(df_usado["service_reg"].unique())
+        
+        if debug and "rota_id" in df.columns:
+            dups = df.groupby("service_reg")["rota_id"].nunique()
+            if any(dups > 1):
+                raise ValueError(f"🚨 Serviços duplicados: {dups[dups > 1].to_dict()}")
 
         # Cleanup to prevent memory overflow or segfault
         del routing

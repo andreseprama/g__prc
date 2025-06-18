@@ -69,7 +69,7 @@ async def persist_routes(
             ceu,
         )
 
-        # --- insere as paragens ---
+        # --- insere as paragens e atualiza service.rota_id ---
         for ordem, node in enumerate(path):
             is_pickup = node < n_srv
             idx = df_idx_map.get(node, node) if df_idx_map else node
@@ -80,6 +80,7 @@ async def persist_routes(
                 row = df.iloc[idx]
                 service_id = int(row["id"])
                 node_type = "PICKUP" if is_pickup else "DELIVERY"
+
                 await sess.execute(
                     text(
                         """
@@ -94,6 +95,22 @@ async def persist_routes(
                         "node_type": node_type,
                     },
                 )
+
+                # Atualiza o serviço com rota_id se ainda não tiver
+                await sess.execute(
+                    text(
+                        """
+                        UPDATE service
+                        SET rota_id = :rota_id
+                        WHERE id = :service_id AND rota_id IS NULL
+                        """
+                    ),
+                    {
+                        "rota_id": rota_id,
+                        "service_id": service_id,
+                    },
+                )
+
             except Exception as e:
                 logger.warning(
                     "⚠️ Erro ao adicionar parada (ordem=%s, node=%s) na rota %s: %s",
