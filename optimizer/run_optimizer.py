@@ -83,7 +83,6 @@ async def optimize(
     trailers_restantes = trailers
     services_alocados: Set[str] = set()
 
-    # ✨ Verifica duplicidade apenas se existir rota_id
     if "rota_id" in df.columns:
         duplicates = df.groupby("service_reg")["rota_id"].nunique()
         invalid_services = duplicates[duplicates > 1]
@@ -105,6 +104,7 @@ async def optimize(
 
         df_usado, df_restante, trailers_usados, _ = selecionar_servicos_e_trailers_compativeis(df_restante, trailers_restantes)
         if df_usado.empty or not trailers_usados:
+            logger.info(f"⛔ Sem trailers compatíveis para rodada {rodada} ({len(df_restante)} serviços)")
             continue
 
         try:
@@ -125,15 +125,29 @@ async def optimize(
             enable_pickup_pairs=True,
         )
 
+        strategy = "tabu" if len(trailers_usados) > 3 else "guided"
         solution = solve_with_params(
             routing,
             manager,
             time_limit_sec=120,
             log_search=True,
-            first_solution_strategy="cheapest"  # novo parâmetro para configurar PATH_CHEAPEST_ARC
+            first_solution_strategy="cheapest",
+            local_search_metaheuristic=strategy,
         )
+
         if solution is None:
-            logger.warning(f"❌ Nenhuma solução encontrada na rodada {rodada}.")
+            logger.warning(f"❌ Nenhuma solução encontrada na rodada {rodada} com 'cheapest'. Tentando fallback com 'greedy'.")
+            solution = solve_with_params(
+                routing,
+                manager,
+                time_limit_sec=60,
+                log_search=True,
+                first_solution_strategy="greedy",
+                local_search_metaheuristic=strategy,
+            )
+
+        if solution is None:
+            logger.warning(f"❌ Nenhuma solução encontrada na rodada {rodada} após fallback.")
             continue
 
         unique_cities = get_unique_cities(df_usado, trailers_usados)

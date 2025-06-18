@@ -6,8 +6,8 @@ def solve_with_params(
     manager: pywrapcp.RoutingIndexManager,
     time_limit_sec: int = 120,
     log_search: bool = True,
-    first_solution_strategy: routing_enums_pb2.FirstSolutionStrategy.Value = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC,
-    local_search_metaheuristic: routing_enums_pb2.LocalSearchMetaheuristic.Value = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH,
+    first_solution_strategy: str = "cheapest",
+    local_search_metaheuristic: str = "guided",
 ) -> pywrapcp.Assignment | None:
     """
     Resolve o modelo com parâmetros configurados.
@@ -17,17 +17,35 @@ def solve_with_params(
         manager: O gerenciador de índices de roteamento.
         time_limit_sec: Tempo limite para o solver (em segundos).
         log_search: Se True, ativa o log da pesquisa.
-        first_solution_strategy: Estratégia de primeira solução.
-        local_search_metaheuristic: Metaheurística de pesquisa local.
+        first_solution_strategy: Estratégia de primeira solução ("cheapest", "savings", "parallel", "automatic").
+        local_search_metaheuristic: Metaheurística de pesquisa local ("guided", "tabu", "greedy", "automatic").
 
     Returns:
         A solução encontrada (Assignment) ou None se não houver solução.
     """
+    strategy_map = {
+        "cheapest": routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC,
+        "savings": routing_enums_pb2.FirstSolutionStrategy.SAVINGS,
+        "parallel": routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION,
+        "automatic": routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC,
+    }
+
+    metaheuristic_map = {
+        "guided": routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH,
+        "tabu": routing_enums_pb2.LocalSearchMetaheuristic.TABU_SEARCH,
+        "greedy": routing_enums_pb2.LocalSearchMetaheuristic.GREEDY_DESCENT,
+        "automatic": routing_enums_pb2.LocalSearchMetaheuristic.AUTOMATIC,
+    }
+
     search_params = pywrapcp.DefaultRoutingSearchParameters()
     search_params.time_limit.seconds = time_limit_sec
     search_params.log_search = log_search
-    search_params.first_solution_strategy = first_solution_strategy
-    search_params.local_search_metaheuristic = local_search_metaheuristic
+    search_params.first_solution_strategy = strategy_map.get(
+        first_solution_strategy.lower(), routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    )
+    search_params.local_search_metaheuristic = metaheuristic_map.get(
+        local_search_metaheuristic.lower(), routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+    )
 
     solution = routing.SolveWithParameters(search_params)
 
