@@ -108,18 +108,35 @@ async def optimize(
         if df_usado.empty or not trailers_usados:
             logger.info(f"⛔ Sem trailers compatíveis para rodada {rodada} ({len(df_restante)} serviços)")
             continue
-        
-        for t in trailers_usados:
-            logger.info(f"🚚 Trailer selecionado: ID={t.get('id')} | base={t.get('base_city')} | CEU={t.get('ceu_max')}")
 
-        for _, row in df_usado.iterrows():
-            logger.info(f"🧾 Serviço: ID={row.get('id')} | Reg={row.get('service_reg')} | Matrícula={row.get('registry')} | Base={row.get('scheduled_base')}")
+        # ✅ Validação das colunas obrigatórias antes de setup_routing_model
+        required_cols = ["id", "service_reg", "ceu_int", "load_city", "unload_city", "scheduled_base"]
+        missing_cols = [col for col in required_cols if col not in df_usado.columns]
+
+        if missing_cols:
+            logger.error(f"❌ df_usado está faltando colunas obrigatórias: {missing_cols}")
+            continue  # Pula essa rodada            
+            
+        # ✅ Validação de colunas obrigatórias nos trailers
+        required_trailer_keys = ["id", "base_city", "ceu_max"]
+        for t in trailers_usados:
+            missing = [k for k in required_trailer_keys if k not in t]
+            if missing:
+                logger.error(f"❌ Trailer {t.get('id', '??')} com chaves faltando: {missing}")
+                continue  # ou `raise ValueError(...)` se for ambiente de staging
 
         logger.info("📦 Serviços a transportar nesta rodada:")
         for _, row in df_usado.iterrows():
             logger.info(
-                f"🧾 ID={row.get('id')}, REG={row.get('service_reg')}, MAT={row.get('registry')}, BASE={row.get('scheduled_base')}, CIDADE={row.get('load_city')} → {row.get('unload_city')}, CEU={row.get('ceu_int')}"
+                f"🧾 ID={row.get('id')}, REG={row.get('service_reg')}, MAT={row.get('registry')}, "
+                f"BASE={row.get('scheduled_base')}, CIDADE={row.get('load_city')} → {row.get('unload_city')}, "
+                f"CEU={row.get('ceu_int')}"
             )
+
+        logger.debug(f"🔍 df_usado.shape: {df_usado.shape}")
+        logger.debug(f"🔍 Columns: {list(df_usado.columns)}")
+        if not df_usado.empty:
+            logger.debug(f"🔍 Primeira linha: {df_usado.iloc[0].to_dict()}")
 
         try:
             routing, manager, starts, dist_matrix, df_idx_map = setup_routing_model(df_usado, trailers_usados, debug=debug)
