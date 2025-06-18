@@ -19,6 +19,8 @@ from backend.solver.optimizer.city_mapping import get_unique_cities
 from backend.solver.optimizer.solve_model import solve_with_params
 from backend.solver.distance import _norm, get_coords, register_coords
 from backend.solver.optimizer.cluster import agrupar_por_cluster_geografico
+import gc
+import time
 
 faulthandler.enable()
 logger = logging.getLogger(__name__)
@@ -136,13 +138,13 @@ async def optimize(
         )
 
         if solution is None:
-            logger.warning(f"❌ Nenhuma solução encontrada na rodada {rodada} com 'cheapest'. Tentando fallback com 'greedy'.")
+            logger.warning(f"❌ Nenhuma solução encontrada na rodada {rodada} com 'cheapest'. Tentando fallback com 'savings'.")
             solution = solve_with_params(
                 routing,
                 manager,
                 time_limit_sec=60,
                 log_search=True,
-                first_solution_strategy="greedy",
+                first_solution_strategy="savings",
                 local_search_metaheuristic=strategy,
             )
 
@@ -181,5 +183,11 @@ async def optimize(
         rota_ids_total.extend(rota_ids)
         trailers_restantes = [t for t in trailers_restantes if t not in trailers_usados]
         services_alocados.update(df_usado["service_reg"].unique())
+
+        # Cleanup to prevent memory overflow or segfault
+        del routing
+        del manager
+        gc.collect()
+        time.sleep(0.2)
 
     return rota_ids_total if not debug else (rota_ids_total, df)
