@@ -78,7 +78,7 @@ async def persist_routes(
                 continue
             try:
                 row = df.iloc[idx]
-                service_id = int(row["id"])
+                service_id = str(row["id"])
                 node_type = "PICKUP" if is_pickup else "DELIVERY"
 
                 await sess.execute(
@@ -91,7 +91,7 @@ async def persist_routes(
                     {
                         "rota_id": rota_id,
                         "ordem": ordem,
-                        "service_id": service_id,
+                        "service_id": str(service_id),
                         "node_type": node_type,
                     },
                 )
@@ -107,7 +107,7 @@ async def persist_routes(
                     ),
                     {
                         "rota_id": rota_id,
-                        "service_id": service_id,
+                        "service_id": str(service_id)
                     },
                 )
 

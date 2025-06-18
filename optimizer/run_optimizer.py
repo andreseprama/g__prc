@@ -107,9 +107,17 @@ async def optimize(
             continue
 
         df_usado, df_restante, trailers_usados, _ = selecionar_servicos_e_trailers_compativeis(df_restante, trailers_restantes)
-        if df_usado.empty or not trailers_usados:
-            logger.info(f"⛔ Sem trailers compatíveis para rodada {rodada} ({len(df_restante)} serviços)")
-            continue
+        if debug:
+            usados_regs = set(df_usado["service_reg"])
+            restantes_regs = set(df_restante["service_reg"])
+            todos_regs = set(df["service_reg"])
+            ignorados = todos_regs - usados_regs - restantes_regs
+            logger.debug(f"🧩 Ignorados nesta rodada (não alocados, não restantes): {sorted(ignorados)}")
+
+            if not df_usado.empty:
+                logger.debug(f"✅ Alocados nesta rodada: {df_usado['service_reg'].tolist()}")
+            if not df_restante.empty:
+                logger.debug(f"🕗 Não alocados mas ainda considerados: {df_restante['service_reg'].tolist()}")
 
         # ✅ Validação das colunas obrigatórias antes de setup_routing_model
         required_cols = ["id", "service_reg", "ceu_int", "load_city", "unload_city", "scheduled_base"]
