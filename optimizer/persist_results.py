@@ -100,7 +100,7 @@ async def persist_routes(
                 await sess.execute(
                     text(
                         """
-                        UPDATE service
+                        UPDATE ids_monitorados
                         SET rota_id = :rota_id
                         WHERE id = :service_id AND rota_id IS NULL
                         """

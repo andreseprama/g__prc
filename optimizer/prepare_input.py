@@ -97,6 +97,7 @@ async def _load_dataframe(
         """
         SELECT
             id,
+            rota_id,
             campos->>'registry' AS matricula,
             campos->'load_city'->>'description'    AS load_city,
             campos->'unload_city'->>'description'  AS unload_city,
@@ -123,6 +124,7 @@ async def _load_dataframe(
         return None
 
     df = pd.DataFrame(rows, columns=list(result.keys()))
+    df["rota_id"] = pd.to_numeric(df["rota_id"], errors="coerce")
     df["expected_delivery_date"] = pd.to_datetime(df["expected_delivery_date"])
     df["expected_delivery_date_manual"] = pd.to_datetime(
         df["expected_delivery_date_manual"], errors="coerce"
