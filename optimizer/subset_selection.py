@@ -1,7 +1,8 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 import pandas as pd
 import logging
-from backend.solver.city_mapping import get_coords, haversine_km
+from backend.solver.utils import haversine_km
+from backend.solver.distance import get_coords
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def selecionar_servicos_e_trailers_compativeis(
             "restante": cap,
             "base_city": t.get("base_city", "")
         })
-        logger.warning("🚛 Trailer %d: ceu_max=%s → cap_int=%d", i, t.get("ceu_max"), cap)
+        logger.warning("\U0001f69b Trailer %d: ceu_max=%s → cap_int=%d", i, t.get("ceu_max"), cap)
 
     group_cols = ["id", "registry"] if "registry" in df.columns else ["id"]
     grouped = df.groupby(group_cols)
@@ -47,20 +48,20 @@ def selecionar_servicos_e_trailers_compativeis(
     bases = df["scheduled_base"].dropna().unique()
 
     for base in bases:
-        logger.info(f"📍 Alocando para base: {base}")
+        logger.info(f"\U0001f4cd Alocando para base: {base}")
         blocos_base = [b for b in service_blocks if b["base"] == base]
         trailers_base = [t for t in trailer_caps if t["base_city"] == base]
 
         if not trailers_base:
-            logger.warning(f"🚫 Nenhum trailer disponível na base {base}")
+            logger.warning(f"\U0001f6ab Nenhum trailer disponível na base {base}")
             continue
 
         for block in blocos_base:
             for trailer in trailers_base:
                 usado = trailer["cap"] - trailer["restante"]
                 ocupacao = (usado / trailer["cap"] * 100) if trailer["cap"] > 0 else 0
-                status = "🟢 usado" if trailer["idx"] in used_trailer_idxs else "⚪ não usado"
-                logger.info(f"🧮 Trailer {trailer['idx']}: ocupação = {usado}/{trailer['cap']} CEU ({ocupacao:.1f}%) {status}")
+                status = "\U0001f7e2 usado" if trailer["idx"] in used_trailer_idxs else "⚪ não usado"
+                logger.info(f"\U0001f9ae Trailer {trailer['idx']}: ocupação = {usado}/{trailer['cap']} CEU ({ocupacao:.1f}%) {status}")
                 if block["ceu"] <= trailer["restante"]:
                     trailer["restante"] -= block["ceu"]
                     used_services.append(block["df"])
@@ -75,20 +76,30 @@ def selecionar_servicos_e_trailers_compativeis(
             else:
                 logger.warning("❌ %s não coube em nenhum trailer na base %s", block["service_reg"], base)
 
-    # fallback: tentar alocar blocos restantes em trailers de outras bases
     blocos_fallback = [b for b in service_blocks if not any(b["df"].equals(u) for u in used_services)]
     trailers_fallback = [t for t in trailer_caps if t["idx"] not in used_trailer_idxs]
 
     if blocos_fallback and trailers_fallback:
         logger.info("🔁 Fallback: tentando alocar blocos restantes em trailers de outras bases")
         for block in blocos_fallback:
-            for trailer in sorted(trailers_fallback, key=lambda t: haversine_km(get_coords(t["base_city"]), get_coords(block["base"])) if get_coords(t["base_city"]) and get_coords(block["base"]) else float("inf")):
-                if not get_coords(trailer["base_city"]) or not get_coords(block["base"]):
+            def get_dist(t):
+                coords_a = get_coords(t["base_city"])
+                coords_b = get_coords(block["base"])
+                if coords_a is None or coords_b is None:
+                    return float("inf")
+                return haversine_km(coords_a, coords_b)
+
+            for trailer in sorted(trailers_fallback, key=get_dist):
+                coords_a = get_coords(trailer["base_city"])
+                coords_b = get_coords(block["base"])
+                if coords_a is None or coords_b is None:
                     logger.warning(f"⚠️ Sem coordenadas para {trailer['base_city']} ou {block['base']}")
                     continue
-                dist = haversine_km(get_coords(trailer["base_city"]), get_coords(block["base"]))
+                dist = haversine_km(coords_a, coords_b)
                 if dist > 200:
-                    logger.info(f"↪️ Ignorando trailer {trailer['idx']} (distância {dist:.1f}km > 200km)")
+                    logger.info(
+                          f"↪️ Serviço {block['service_reg']} não alocado: distância {dist:.1f}km entre {trailer['base_city']} e {block['base']} excede 200km"
+                    )                    
                     continue
 
                 if block["ceu"] <= trailer["restante"]:
