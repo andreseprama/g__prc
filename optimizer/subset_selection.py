@@ -1,12 +1,8 @@
-# backend/solver/optimizer/subset_selection.py
-
-import pandas as pd
 from typing import List, Tuple, Dict
+import pandas as pd
 import logging
 
 logger = logging.getLogger(__name__)
-
-
 
 def selecionar_servicos_e_trailers_compativeis(
     df: pd.DataFrame, trailers: List[dict]
@@ -26,7 +22,7 @@ def selecionar_servicos_e_trailers_compativeis(
             "restante": cap,
             "base_city": t.get("base_city", "")
         })
-        logger.warning("\U0001f69b Trailer %d: ceu_max=%s → cap_int=%d", i, t.get("ceu_max"), cap)
+        logger.warning("🚛 Trailer %d: ceu_max=%s → cap_int=%d", i, t.get("ceu_max"), cap)
 
     group_cols = ["id", "registry"] if "registry" in df.columns else ["id"]
     grouped = df.groupby(group_cols)
@@ -50,8 +46,8 @@ def selecionar_servicos_e_trailers_compativeis(
         for trailer in trailer_caps:
             usado = trailer["cap"] - trailer["restante"]
             ocupacao = (usado / trailer["cap"]) * 100 if trailer["cap"] > 0 else 0
-            status = "\U0001f7e2 usado" if trailer["idx"] in used_trailer_idxs else "⚪ não usado"
-            logger.info(f"\U0001f9ae Trailer {trailer['idx']}: ocupação = {usado}/{trailer['cap']} CEU ({ocupacao:.1f}%) {status}")
+            status = "🟢 usado" if trailer["idx"] in used_trailer_idxs else "⚪ não usado"
+            logger.info(f"🧮 Trailer {trailer['idx']}: ocupação = {usado}/{trailer['cap']} CEU ({ocupacao:.1f}%) {status}")
             if block["ceu"] <= trailer["restante"]:
                 trailer["restante"] -= block["ceu"]
                 used_services.append(block["df"])
