@@ -104,4 +104,19 @@ async def persist_routes(
                 )
 
     await sess.commit()
+
+    # ✅ Mapear services para rota_id
+    if df_idx_map is None:
+        df_idx_map = {i: i for i in range(len(df))}
+
+    node_to_service = {
+        df_idx_map.get(node, node): rota_id
+        for rota_id, (_, path) in zip(rota_ids, routes)
+        for node in path
+        if node < n_srv and 0 <= df_idx_map.get(node, node) < len(df)
+    }
+
+    # 🧩 Cria nova coluna no df
+    df["rota_id"] = df.index.map(node_to_service.get)
+
     return rota_ids
