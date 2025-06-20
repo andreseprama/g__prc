@@ -17,7 +17,7 @@ from backend.solver.geocode import fetch_and_store_city
 from backend.solver.utils import norm
 from backend.solver.optimizer.city_mapping import get_unique_cities
 from backend.solver.optimizer.solve_model import solve_with_params
-from backend.solver.distance import _norm, get_coords, register_coords
+from backend.solver.distance import _norm, get_coords, register_coords, exportar_cidades_invalidas_csv
 from backend.solver.optimizer.cluster import agrupar_por_cluster_geografico
 import gc
 import time
@@ -234,5 +234,8 @@ async def optimize(
         del manager
         gc.collect()
         time.sleep(0.2)
+        
+    # ✅ Exporta log de cidades inválidas ao final de tudo
+    exportar_cidades_invalidas_csv()
 
     return rota_ids_total if not debug else (rota_ids_total, df)

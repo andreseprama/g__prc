@@ -7,11 +7,11 @@ from geopy.distance import geodesic  # type: ignore
 import pandas as pd 
 import csv
 import os
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
 # Cache de cidades inválidas
-_INVALID_CITY_LOG: list[dict] = []
+_INVALID_CITY_LOG: List[Dict[str, str]] = []
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 _COORDS_CACHE: Dict[str, Tuple[float, float]] = {}
 
 
-def _norm(texto: str) -> str:
+def _norm(texto: Optional[str]) -> str:
     if not isinstance(texto, str) or not texto.strip():
         return "DESCONHECIDA"
 
@@ -27,7 +27,6 @@ def _norm(texto: str) -> str:
     ascii_texto = texto_normalizado.encode("ASCII", "ignore").decode()
     texto_maiusculo = ascii_texto.upper().strip()
 
-    # Redundante após normalização, mas mantido para casos específicos
     return (
         texto_maiusculo
         .replace("Á", "A")
@@ -99,38 +98,41 @@ def build_distance_matrix(locations: List[str]) -> List[List[float]]:
     return mat
 
 
-def get_coords(city: str, *, service_id: Optional[str] = None, plate: Optional[str] = None) -> Optional[Tuple[float, float]]:
+def get_coords(city: Optional[str], *, service_id: Optional[str] = None, plate: Optional[str] = None) -> Tuple[float, float] | None:
     norm_name = _norm(city)
 
     if norm_name == "DESCONHECIDA" or norm_name not in _COORDS_CACHE:
-        entrada = {
+        entry = {
             "service_id": service_id or "desconhecido",
             "matricula": plate or "desconhecida",
             "cidade_original": city or "None",
-            "cidade_normalizada": norm_name
+            "cidade_normalizada": norm_name,
         }
-        _INVALID_CITY_LOG.append(entrada)
-
-        logger.warning(
-            f"❌ Coordenada inválida → ID={entrada['service_id']}, placa={entrada['matricula']}, cidade={entrada['cidade_original']} → '{entrada['cidade_normalizada']}'"
-        )
+        _INVALID_CITY_LOG.append(entry)
+        logger.warning(f"❌ Cidade inválida: {entry}")
         return None
 
     return _COORDS_CACHE[norm_name]
 
 
-def exportar_cidades_invalidas_csv(path: str = "/tmp/cidades_invalidas.csv") -> None:
+def exportar_cidades_invalidas_csv(
+    base_path: str = "/wsl.localhost/Ubuntu-24.04/home/andrecouto/1GESTOW_GESTAO_SERVICOS/backend/solver"
+) -> None:
     if not _INVALID_CITY_LOG:
         logger.info("✅ Nenhuma cidade inválida detectada.")
         return
 
+    today_str = date.today().isoformat()
+    filename = f"cidades_invalidas_{today_str}.csv"
+    full_path = os.path.join(base_path, filename)
+
     try:
-        with open(path, mode="w", newline="", encoding="utf-8") as f:
+        with open(full_path, mode="w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=["service_id", "matricula", "cidade_original", "cidade_normalizada"])
             writer.writeheader()
             writer.writerows(_INVALID_CITY_LOG)
 
-        logger.info(f"📤 Cidades inválidas exportadas para: {path}")
+        logger.info(f"📤 CSV de cidades inválidas salvo em: {full_path}")
 
     except Exception as e:
-        logger.error(f"❌ Falha ao exportar CSV de cidades inválidas: {e}")
+        logger.error(f"❌ Erro ao salvar CSV de cidades inválidas: {e}")
