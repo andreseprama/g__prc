@@ -37,12 +37,16 @@ def extract_routes(
 
 
 def norm(texto: str) -> str:
+    if not isinstance(texto, str) or not texto.strip():
+        return "DESCONHECIDA"
+
+    texto_normalizado = unicodedata.normalize("NFKD", texto)
+    ascii_texto = texto_normalizado.encode("ASCII", "ignore").decode()
+    texto_maiusculo = ascii_texto.upper().strip()
+
+    # Redundante após normalização, mas mantido para casos específicos
     return (
-        unicodedata.normalize("NFKD", texto)
-        .encode("ASCII", "ignore")
-        .decode()
-        .upper()
-        .strip()
+        texto_maiusculo
         .replace("Á", "A")
         .replace("Ã", "A")
         .replace("É", "E")

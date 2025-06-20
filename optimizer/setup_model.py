@@ -61,6 +61,7 @@ def set_cost_callback(
     DEFAULT_PENALTY = 999_999
 
     def cost_cb(i: int, j: int) -> int:
+        from_node, to_node = -1, -1  # Inicializa como inválidos para logging seguro
         try:
             if not (0 <= i < manager.GetNumberOfIndices()) or not (0 <= j < manager.GetNumberOfIndices()):
                 logger.warning(f"⚠️ Índice i={i} ou j={j} fora de range válido do manager.")
@@ -73,7 +74,14 @@ def set_cost_callback(
                 logger.warning(f"⚠️ Nós fora da matriz: from_node={from_node}, to_node={to_node}")
                 return DEFAULT_PENALTY
 
-            return dist_matrix[from_node][to_node]
+            custo = dist_matrix[from_node][to_node]
+
+            if not isinstance(custo, int):
+                logger.error(f"🚫 Custo inválido (não-int) entre from_node={from_node} → to_node={to_node}: {custo}")
+                return DEFAULT_PENALTY
+
+            logger.debug(f"↪️ Custo entre from_node={from_node} → to_node={to_node} = {custo}")
+            return custo
 
         except Exception as e:
             logger.error(f"⛔ cost_cb erro: i={i} j={j} from={from_node} to={to_node} → {e}")
@@ -82,6 +90,8 @@ def set_cost_callback(
     index = routing.RegisterTransitCallback(cost_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(index)
     logger.debug("✅ Callback de custo registrado com proteção extra")
+
+
 
 
 

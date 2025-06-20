@@ -5,6 +5,13 @@ import unicodedata
 import logging
 from geopy.distance import geodesic  # type: ignore
 import pandas as pd 
+import csv
+import os
+from datetime import datetime
+from typing import Optional
+
+# Cache de cidades inválidas
+_INVALID_CITY_LOG: list[dict] = []
 
 logger = logging.getLogger(__name__)
 
@@ -12,19 +19,24 @@ logger = logging.getLogger(__name__)
 _COORDS_CACHE: Dict[str, Tuple[float, float]] = {}
 
 
-def _norm(city: str) -> str:
-    """
-    Normaliza o nome da cidade:
-    - Remove acentos (NFKD)
-    - Converte para ASCII
-    - Upper case e strip
-    """
+def _norm(texto: str) -> str:
+    if not isinstance(texto, str) or not texto.strip():
+        return "DESCONHECIDA"
+
+    texto_normalizado = unicodedata.normalize("NFKD", texto)
+    ascii_texto = texto_normalizado.encode("ASCII", "ignore").decode()
+    texto_maiusculo = ascii_texto.upper().strip()
+
+    # Redundante após normalização, mas mantido para casos específicos
     return (
-        unicodedata.normalize("NFKD", city)
-        .encode("ASCII", "ignore")
-        .decode()
-        .upper()
-        .strip()
+        texto_maiusculo
+        .replace("Á", "A")
+        .replace("Ã", "A")
+        .replace("É", "E")
+        .replace("Í", "I")
+        .replace("Ó", "O")
+        .replace("Ú", "U")
+        .replace("Ç", "C")
     )
 
 
@@ -87,8 +99,38 @@ def build_distance_matrix(locations: List[str]) -> List[List[float]]:
     return mat
 
 
-def get_coords(city: str) -> Tuple[float, float] | None:
-    try:
-        return _coords(city)
-    except ValueError:
+def get_coords(city: str, *, service_id: Optional[str] = None, plate: Optional[str] = None) -> Optional[Tuple[float, float]]:
+    norm_name = _norm(city)
+
+    if norm_name == "DESCONHECIDA" or norm_name not in _COORDS_CACHE:
+        entrada = {
+            "service_id": service_id or "desconhecido",
+            "matricula": plate or "desconhecida",
+            "cidade_original": city or "None",
+            "cidade_normalizada": norm_name
+        }
+        _INVALID_CITY_LOG.append(entrada)
+
+        logger.warning(
+            f"❌ Coordenada inválida → ID={entrada['service_id']}, placa={entrada['matricula']}, cidade={entrada['cidade_original']} → '{entrada['cidade_normalizada']}'"
+        )
         return None
+
+    return _COORDS_CACHE[norm_name]
+
+
+def exportar_cidades_invalidas_csv(path: str = "/tmp/cidades_invalidas.csv") -> None:
+    if not _INVALID_CITY_LOG:
+        logger.info("✅ Nenhuma cidade inválida detectada.")
+        return
+
+    try:
+        with open(path, mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["service_id", "matricula", "cidade_original", "cidade_normalizada"])
+            writer.writeheader()
+            writer.writerows(_INVALID_CITY_LOG)
+
+        logger.info(f"📤 Cidades inválidas exportadas para: {path}")
+
+    except Exception as e:
+        logger.error(f"❌ Falha ao exportar CSV de cidades inválidas: {e}")
