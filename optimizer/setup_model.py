@@ -10,9 +10,12 @@ from backend.solver.optimizer.city_mapping import (
     map_bases_to_indices,
 )
 
-from backend.solver.logger_diagnostico import diagnostico_logger
-
 logger = logging.getLogger(__name__)
+
+# Valor padrão a retornar em caso de erro no callback
+DEFAULT_PENALTY = 999_999
+# Lista de erros capturados para diagnóstico posterior
+_COST_CB_ERRORS: List[dict] = []
 
 
 def pad_dist_matrix(dist_matrix: List[List[int]], target_size: int) -> List[List[int]]:
@@ -56,42 +59,70 @@ def set_cost_callback(
     dist_matrix: List[List[int]],
 ):
     """
-    Define o callback de custo baseado na matriz de distâncias, com proteções adicionais
-    para evitar segmentation fault por acessos fora da matriz.
+    Define o callback de custo baseado na matriz de distâncias,
+    com proteções adicionais para evitar segmentation fault.
+    Também armazena erros em _COST_CB_ERRORS para análise posterior.
     """
 
-    DEFAULT_PENALTY = 999_999
-
     def cost_cb(i: int, j: int) -> int:
-        from_node, to_node = -1, -1  # Inicializa como inválidos para logging seguro
+        from_node, to_node = -1, -1
         try:
-            if not (0 <= i < manager.GetNumberOfIndices()) or not (0 <= j < manager.GetNumberOfIndices()):
-                logger.warning(f"⚠️ Índice i={i} ou j={j} fora de range válido do manager.")
+            if not (0 <= i < manager.Size()) or not (0 <= j < manager.Size()):
+                logger.warning("⚠️ Índice fora de range: i=%d, j=%d", i, j)
+                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": "index out of manager.Size()"})
                 return DEFAULT_PENALTY
 
-            from_node = manager.IndexToNode(i)
-            to_node = manager.IndexToNode(j)
+            try:
+                from_node = manager.IndexToNode(i)
+                to_node = manager.IndexToNode(j)
+            except Exception as e:
+                logger.warning(f"⚠️ Falha em IndexToNode: i={i}, j={j}, erro={e}")
+                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": str(e)})
+                return DEFAULT_PENALTY
 
-            if not (0 <= from_node < len(dist_matrix)) or not (0 <= to_node < len(dist_matrix[from_node])):
-                logger.warning(f"⚠️ Nós fora da matriz: from_node={from_node}, to_node={to_node}")
+            if not (0 <= from_node < len(dist_matrix)):
+                logger.warning(f"⚠️ from_node inválido: {from_node}")
+                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "from_node out of bounds"})
+                return DEFAULT_PENALTY
+
+            if not (0 <= to_node < len(dist_matrix[from_node])):
+                logger.warning(f"⚠️ to_node inválido na linha: {to_node}")
+                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "to_node out of row bounds"})
                 return DEFAULT_PENALTY
 
             custo = dist_matrix[from_node][to_node]
 
             if not isinstance(custo, int):
-                logger.error(f"🚫 Custo inválido (não-int) entre from_node={from_node} → to_node={to_node}: {custo}")
+                logger.error(f"🚫 Custo não-int: from_node={from_node}, to_node={to_node}, valor={custo}")
+                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "non-int cost", "valor": custo})
                 return DEFAULT_PENALTY
 
-            logger.debug(f"↪️ Custo entre from_node={from_node} → to_node={to_node} = {custo}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"↪️ Custo entre {from_node} → {to_node} = {custo}")
+
             return custo
 
         except Exception as e:
-            logger.error(f"⛔ cost_cb erro: i={i} j={j} from={from_node} to={to_node} → {e}")
+            logger.error(f"⛔ Exceção inesperada no cost_cb: i={i}, j={j}, from={from_node}, to={to_node}, erro={e}")
+            _COST_CB_ERRORS.append({"i": i, "j": j, "erro": str(e)})
             return DEFAULT_PENALTY
 
     index = routing.RegisterTransitCallback(cost_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(index)
     logger.debug("✅ Callback de custo registrado com proteção extra")
+
+
+def export_cost_cb_errors_csv(path: str):
+    """
+    Exporta os erros do cost_cb para um CSV no caminho informado.
+    """
+    import pandas as pd
+    if _COST_CB_ERRORS:
+        df = pd.DataFrame(_COST_CB_ERRORS)
+        df.to_csv(path, index=False, encoding='utf-8')
+        logger.warning(f"⚠️ {_COST_CB_ERRORS.__len__()} erros do callback exportados para {path}")
+    else:
+        logger.info("✅ Nenhum erro registrado no callback de custo.")
 
 
 
@@ -200,8 +231,7 @@ def setup_routing_model(
 
 
     if routing.vehicles() == 0 or manager.GetNumberOfNodes() == 0:
-        logging.critical("❌ Modelo inválido: sem veículos ou nós.")
-        return None
+        raise ValueError("❌ Modelo inválido: sem veículos ou nós.")
     
     
 

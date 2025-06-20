@@ -10,7 +10,7 @@ from itertools import zip_longest, chain
 
 from .prepare_input import prepare_input_dataframe
 from .subset_selection import selecionar_servicos_e_trailers_compativeis
-from .setup_model import setup_routing_model
+from .setup_model import setup_routing_model, export_cost_cb_errors_csv
 from .constraints import apply_all_constraints
 from .persist_results import persist_routes
 from backend.solver.geocode import fetch_and_store_city
@@ -21,6 +21,14 @@ from backend.solver.distance import _norm, get_coords, register_coords, exportar
 from backend.solver.optimizer.cluster import agrupar_por_cluster_geografico
 import gc
 import time
+import logging
+
+diagnostico_logger = logging.getLogger("diagnostico_modelo")
+diagnostico_logger.setLevel(logging.ERROR)
+file_handler = logging.FileHandler("diagnostico_modelo.log")
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+file_handler.setFormatter(formatter)
+diagnostico_logger.addHandler(file_handler)
 
 faulthandler.enable()
 logger = logging.getLogger(__name__)
@@ -152,6 +160,13 @@ async def optimize(
             routing, manager, starts, dist_matrix, df_idx_map = setup_routing_model(df_usado, trailers_usados, debug=debug)
         except Exception as e:
             logger.error(f"❌ Erro ao preparar modelo de rota: {e}")
+            diagnostico_logger.error(
+                f"❌ setup_routing_model falhou: {e}\n"
+                f"→ Total serviços: {len(df_usado)}\n"
+                f"→ Total trailers: {len(trailers_usados)}\n"
+                f"→ Serviços: {[s for s in df_usado['service_reg'].tolist()]}\n"
+                f"→ Bases: {[t.get('base_city', '??') for t in trailers_usados]}"
+            )
             continue
 
         apply_all_constraints(
@@ -232,10 +247,13 @@ async def optimize(
         # Cleanup to prevent memory overflow or segfault
         del routing
         del manager
+        if not debug:
+            del df
         gc.collect()
         time.sleep(0.2)
         
     # ✅ Exporta log de cidades inválidas ao final de tudo
     exportar_cidades_invalidas_csv()
+    export_cost_cb_errors_csv("/app/backend/solvercallback_erros.csv")
 
     return rota_ids_total if not debug else (rota_ids_total, df)
