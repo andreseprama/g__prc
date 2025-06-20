@@ -60,63 +60,55 @@ def set_cost_callback(
     manager: pywrapcp.RoutingIndexManager,
     dist_matrix: List[List[int]],
 ):
-    """
-    Define o callback de custo baseado na matriz de distâncias,
-    com proteções adicionais para evitar segmentation fault.
-    Também armazena erros em _COST_CB_ERRORS para análise posterior.
-    """
+    DEFAULT_PENALTY = 999_999
 
     def cost_cb(i: int, j: int) -> int:
         from_node, to_node = -1, -1
         try:
             if not (0 <= i < routing.Size()) or not (0 <= j < routing.Size()):
-                logger.warning("⚠️ Índice fora de range: i=%d, j=%d", i, j)
-                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": "index out of routing.Size()"})
+                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": "index fora de range do routing.Size()"})
                 return DEFAULT_PENALTY
 
             try:
                 from_node = manager.IndexToNode(i)
                 to_node = manager.IndexToNode(j)
             except Exception as e:
-                logger.warning(f"⚠️ Falha em IndexToNode: i={i}, j={j}, erro={e}")
-                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": f"IndexToNode fail: {e}"})
+                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": f"IndexToNode falhou: {e}"})
                 return DEFAULT_PENALTY
 
             if not (0 <= from_node < len(dist_matrix)):
-                logger.warning(f"⚠️ from_node inválido: {from_node}")
-                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "from_node out of bounds"})
+                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "from_node fora do dist_matrix"})
                 return DEFAULT_PENALTY
 
-            if not (0 <= to_node < len(dist_matrix)):
-                logger.warning(f"⚠️ to_node inválido global: {to_node}")
-                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "to_node out of bounds"})
-                return DEFAULT_PENALTY
-
-            if to_node >= len(dist_matrix[from_node]):
-                logger.warning(f"⚠️ to_node fora da linha: {to_node}")
+            if not (0 <= to_node < len(dist_matrix[from_node])):
                 _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "to_node fora da linha"})
                 return DEFAULT_PENALTY
 
             custo = dist_matrix[from_node][to_node]
 
             if not isinstance(custo, int):
-                logger.error(f"🚫 Custo não-int: from_node={from_node}, to_node={to_node}, valor={custo}")
-                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "non-int cost", "valor": custo})
+                _COST_CB_ERRORS.append({
+                    "from_node": from_node,
+                    "to_node": to_node,
+                    "erro": "custo não int",
+                    "valor": custo
+                })
                 return DEFAULT_PENALTY
-
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"↪️ Custo entre {from_node} → {to_node} = {custo}")
 
             return custo
 
         except Exception as e:
-            logger.error(f"⛔️ Exceção inesperada no cost_cb: i={i}, j={j}, from={from_node}, to={to_node}, erro={e}")
-            _COST_CB_ERRORS.append({"i": i, "j": j, "erro": str(e)})
+            _COST_CB_ERRORS.append({
+                "i": i, "j": j,
+                "from_node": from_node, "to_node": to_node,
+                "erro": f"exceção inesperada: {e}"
+            })
             return DEFAULT_PENALTY
 
     index = routing.RegisterTransitCallback(cost_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(index)
-    logger.debug("✅ Callback de custo registrado com proteção extra")
+    logger.debug("✅ Callback de custo registrado com proteção")
+
 
 
 def export_cost_cb_errors_csv():

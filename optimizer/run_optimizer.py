@@ -247,7 +247,6 @@ async def optimize(
         # Cleanup to prevent memory overflow or segfault
         del routing
         del manager
-        
         gc.collect()
         time.sleep(0.2)
         

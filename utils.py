@@ -8,6 +8,7 @@ import os
 import httpx
 from sqlalchemy import insert
 from backend.solver.distance import register_coords, _norm
+import pandas as pd
 
 
 logger = logging.getLogger(__name__)
@@ -17,23 +18,64 @@ def extract_routes(
     routing: pywrapcp.RoutingModel,
     manager: pywrapcp.RoutingIndexManager,
     solution,
-    n_services: int,
-    debug: bool = False,
-) -> list[tuple[int, list[int]]]:
+) -> List[Tuple[int, List[int]]]:
     rotas = []
     for v in range(routing.vehicles()):
         idx = routing.Start(v)
         path = []
         while not routing.IsEnd(idx):
             node = manager.IndexToNode(idx)
-            # ignora o depósito fictício (0)
-            if node != 0:
-                # converte de 1..2*n_services para 0..2*n_services-1
-                path.append(node - 1)
+            path.append(node)
             idx = solution.Value(routing.NextVar(idx))
         if path:
             rotas.append((v, path))
     return rotas
+
+def extract_solution(
+    routing: pywrapcp.RoutingModel,
+    manager: pywrapcp.RoutingIndexManager,
+    solution,
+    df: pd.DataFrame,
+    df_idx_map: Dict[int, int],
+    export_csv: bool = True,
+    output_path: str = "rota_extraida.csv",
+    debug: bool = False,
+) -> List[Dict]:
+    resultado = []
+    try:
+        rotas = extract_routes(routing, manager, solution)
+        logger.info(f"✅ Total de rotas extraídas: {len(rotas)}")
+
+        for v, caminho in rotas:
+            for ordem, solver_idx in enumerate(caminho):
+                if solver_idx not in df_idx_map:
+                    logger.warning(f"⚠️ Solver idx {solver_idx} não encontrado no df_idx_map")
+                    continue
+
+                df_idx = df_idx_map[solver_idx]
+                row = df.iloc[df_idx]
+                reg = {
+                    "veiculo": v,
+                    "ordem": ordem,
+                    "service_reg": row.get("service_reg"),
+                    "matricula": row.get("matricula"),
+                    "cidade": row.get("load_city"),
+                    "id": row.get("id"),
+                }
+                resultado.append(reg)
+
+                if debug:
+                    logger.debug(f"🚚 Veículo {v} → Ordem {ordem} → {reg}")
+
+        if export_csv:
+            df_saida = pd.DataFrame(resultado)
+            df_saida.to_csv(output_path, index=False, encoding="utf-8-sig")
+            logger.info(f"📤 CSV de rota exportado para {output_path}")
+
+    except Exception as e:
+        logger.exception(f"❌ Erro ao extrair solução: {e}")
+
+    return resultado
 
 
 def norm(texto: str) -> str:

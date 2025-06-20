@@ -1,6 +1,8 @@
 from ortools.constraint_solver import routing_enums_pb2, pywrapcp
 import logging
-
+import csv
+from typing import Any
+import pandas as pd 
 
 logger = logging.getLogger(__name__)
 
@@ -14,18 +16,8 @@ def solve_with_params(
 ) -> pywrapcp.Assignment | None:
     """
     Resolve o modelo com parâmetros configurados.
-
-    Args:
-        routing: O modelo de roteamento OR-Tools.
-        manager: O gerenciador de índices de roteamento.
-        time_limit_sec: Tempo limite para o solver (em segundos).
-        log_search: Se True, ativa o log da pesquisa.
-        first_solution_strategy: Estratégia de primeira solução ("cheapest", "savings", "parallel", "automatic").
-        local_search_metaheuristic: Metaheurística de pesquisa local ("guided", "tabu", "greedy", "automatic").
-
-    Returns:
-        A solução encontrada (Assignment) ou None se não houver solução.
     """
+
     strategy_map = {
         "cheapest": routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC,
         "savings": routing_enums_pb2.FirstSolutionStrategy.SAVINGS,
@@ -49,26 +41,123 @@ def solve_with_params(
     search_params.local_search_metaheuristic = metaheuristic_map.get(
         local_search_metaheuristic.lower(), routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     )
-    
-    # Proteção antes de Solve
-    logging.debug(f"🔍 Validando modelo: {routing.vehicles()} veículos, {manager.GetNumberOfNodes()} nós")    
+
     logger.debug(f"🔍 Validando modelo: {routing.vehicles()} veículos, {routing.Size()} nós")
+
     if routing.vehicles() == 0 or routing.Size() == 0:
         logger.critical("❌ Modelo inválido: sem veículos ou nós.")
         return None
 
     try:
         for i in range(manager.GetNumberOfNodes()):
-            manager.IndexToNode(i)  # Valida se todos os índices são mapeáveis
+            _ = manager.IndexToNode(i)
     except Exception as e:
-        logging.critical(f"❌ Erro ao validar índices de nodes: {e}")
+        logger.critical(f"❌ Erro ao validar índices de nodes: {e}")
         return None
 
-    solution = routing.SolveWithParameters(search_params)
+    try:
+        solution = routing.SolveWithParameters(search_params)
+    except Exception as e:
+        logger.critical(f"💥 Erro ao executar SolveWithParameters: {e}")
+        return None
 
     if solution:
-        logging.info("✅ Solução encontrada para o problema.")
+        logger.info("✅ Solução encontrada para o problema.")
     else:
-        logging.warning("❌ Nenhuma solução encontrada dentro do limite de tempo.")
+        logger.warning("❌ Nenhuma solução encontrada dentro do limite de tempo.")
 
     return solution
+
+
+def extract_solution(
+    routing: pywrapcp.RoutingModel,
+    manager: pywrapcp.RoutingIndexManager,
+    solution: pywrapcp.Assignment,
+    df: pd.DataFrame,
+    df_idx_map: dict[int, int],
+    export_csv: bool = False,
+    csv_path: str = "rota_extraida.csv"
+) -> list[list[int]]:
+    """
+    Extrai rotas da solução com metadados e exportação opcional em CSV.
+
+    Args:
+        routing: Modelo OR-Tools.
+        manager: Gerenciador de índices.
+        solution: Objeto da solução.
+        df: DataFrame original com serviços.
+        df_idx_map: Mapeamento entre solver_idx → df_idx.
+        export_csv: Exporta para CSV se True.
+        csv_path: Caminho do CSV.
+
+    Returns:
+        Lista de rotas extraídas.
+    """
+    if not solution:
+        logger.error("❌ Nenhuma solução fornecida.")
+        return []
+
+    rotas_extraidas = []
+    linhas_csv = []
+
+    try:
+        for veiculo_id in range(routing.vehicles()):
+            index = routing.Start(veiculo_id)
+            rota = []
+
+            ordem = 0
+            while not routing.IsEnd(index):
+                node_id = manager.IndexToNode(index)
+                rota.append(node_id)
+
+                solver_idx = index
+                df_idx = df_idx_map.get(solver_idx, None)
+
+                if df_idx is not None and 0 <= df_idx < len(df):
+                    row = df.iloc[df_idx]
+                    linha = {
+                        "veiculo_id": veiculo_id,
+                        "ordem": ordem,
+                        "node_id": node_id,
+                        "id": row.get("id"),
+                        "matricula": row.get("matricula"),
+                        "cidade": row.get("load_city"),
+                        "service_reg": row.get("service_reg"),
+                    }
+                    linhas_csv.append(linha)
+
+                ordem += 1
+                index = solution.Value(routing.NextVar(index))
+
+            # Adiciona nó final (end)
+            end_node = manager.IndexToNode(index)
+            rota.append(end_node)
+            rotas_extraidas.append(rota)
+
+            linhas_csv.append({
+                "veiculo_id": veiculo_id,
+                "ordem": ordem,
+                "node_id": end_node,
+                "id": None,
+                "matricula": None,
+                "cidade": "END",
+                "service_reg": None,
+            })
+
+            logger.debug(f"🚛 Veículo {veiculo_id} → Rota: {rota}")
+
+        if export_csv:
+            try:
+                with open(csv_path, "w", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=linhas_csv[0].keys())
+                    writer.writeheader()
+                    writer.writerows(linhas_csv)
+                logger.info(f"📄 CSV exportado: {csv_path}")
+            except Exception as e:
+                logger.error(f"❌ Erro ao exportar rota CSV: {e}")
+
+    except Exception as e:
+        logger.exception(f"💥 Falha ao extrair rotas: {e}")
+        return []
+
+    return rotas_extraidas
