@@ -247,13 +247,12 @@ async def optimize(
         # Cleanup to prevent memory overflow or segfault
         del routing
         del manager
-        if not debug:
-            del df
+        
         gc.collect()
         time.sleep(0.2)
         
     # ✅ Exporta log de cidades inválidas ao final de tudo
     exportar_cidades_invalidas_csv()
-    export_cost_cb_errors_csv("/app/backend/solvercallback_erros.csv")
+    export_cost_cb_errors_csv()
 
     return rota_ids_total if not debug else (rota_ids_total, df)

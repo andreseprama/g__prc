@@ -4,6 +4,8 @@ import logging
 from typing import List, Tuple, Dict
 from ortools.constraint_solver import pywrapcp
 import pandas as pd
+import os
+from datetime import datetime
 
 from backend.solver.optimizer.city_mapping import (
     build_city_index_and_matrix,
@@ -15,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Valor padrão a retornar em caso de erro no callback
 DEFAULT_PENALTY = 999_999
 # Lista de erros capturados para diagnóstico posterior
-_COST_CB_ERRORS: List[dict] = []
+_COST_CB_ERRORS: list[dict] = []
 
 
 def pad_dist_matrix(dist_matrix: List[List[int]], target_size: int) -> List[List[int]]:
@@ -67,9 +69,9 @@ def set_cost_callback(
     def cost_cb(i: int, j: int) -> int:
         from_node, to_node = -1, -1
         try:
-            if not (0 <= i < manager.Size()) or not (0 <= j < manager.Size()):
+            if not (0 <= i < routing.Size()) or not (0 <= j < routing.Size()):
                 logger.warning("⚠️ Índice fora de range: i=%d, j=%d", i, j)
-                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": "index out of manager.Size()"})
+                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": "index out of routing.Size()"})
                 return DEFAULT_PENALTY
 
             try:
@@ -77,7 +79,7 @@ def set_cost_callback(
                 to_node = manager.IndexToNode(j)
             except Exception as e:
                 logger.warning(f"⚠️ Falha em IndexToNode: i={i}, j={j}, erro={e}")
-                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": str(e)})
+                _COST_CB_ERRORS.append({"i": i, "j": j, "erro": f"IndexToNode fail: {e}"})
                 return DEFAULT_PENALTY
 
             if not (0 <= from_node < len(dist_matrix)):
@@ -85,9 +87,14 @@ def set_cost_callback(
                 _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "from_node out of bounds"})
                 return DEFAULT_PENALTY
 
-            if not (0 <= to_node < len(dist_matrix[from_node])):
-                logger.warning(f"⚠️ to_node inválido na linha: {to_node}")
-                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "to_node out of row bounds"})
+            if not (0 <= to_node < len(dist_matrix)):
+                logger.warning(f"⚠️ to_node inválido global: {to_node}")
+                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "to_node out of bounds"})
+                return DEFAULT_PENALTY
+
+            if to_node >= len(dist_matrix[from_node]):
+                logger.warning(f"⚠️ to_node fora da linha: {to_node}")
+                _COST_CB_ERRORS.append({"from_node": from_node, "to_node": to_node, "erro": "to_node fora da linha"})
                 return DEFAULT_PENALTY
 
             custo = dist_matrix[from_node][to_node]
@@ -103,7 +110,7 @@ def set_cost_callback(
             return custo
 
         except Exception as e:
-            logger.error(f"⛔ Exceção inesperada no cost_cb: i={i}, j={j}, from={from_node}, to={to_node}, erro={e}")
+            logger.error(f"⛔️ Exceção inesperada no cost_cb: i={i}, j={j}, from={from_node}, to={to_node}, erro={e}")
             _COST_CB_ERRORS.append({"i": i, "j": j, "erro": str(e)})
             return DEFAULT_PENALTY
 
@@ -112,19 +119,13 @@ def set_cost_callback(
     logger.debug("✅ Callback de custo registrado com proteção extra")
 
 
-def export_cost_cb_errors_csv(path: str):
-    """
-    Exporta os erros do cost_cb para um CSV no caminho informado.
-    """
-    import pandas as pd
-    if _COST_CB_ERRORS:
-        df = pd.DataFrame(_COST_CB_ERRORS)
-        df.to_csv(path, index=False, encoding='utf-8')
-        logger.warning(f"⚠️ {_COST_CB_ERRORS.__len__()} erros do callback exportados para {path}")
-    else:
-        logger.info("✅ Nenhum erro registrado no callback de custo.")
-
-
+def export_cost_cb_errors_csv():
+    if not _COST_CB_ERRORS:
+        return
+    filename = f"cost_cb_erros_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+    path = os.path.join("/app/backend/solver/", filename)
+    pd.DataFrame(_COST_CB_ERRORS).to_csv(path, index=False)
+    logger.warning(f"🚨 Exportado cost_cb errors para: {path}")
 
 
 

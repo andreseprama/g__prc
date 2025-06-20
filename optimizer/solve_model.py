@@ -1,6 +1,9 @@
 from ortools.constraint_solver import routing_enums_pb2, pywrapcp
 import logging
 
+
+logger = logging.getLogger(__name__)
+
 def solve_with_params(
     routing: pywrapcp.RoutingModel,
     manager: pywrapcp.RoutingIndexManager,
@@ -48,10 +51,10 @@ def solve_with_params(
     )
     
     # Proteção antes de Solve
-    logging.debug(f"🔍 Validando modelo: {routing.vehicles()} veículos, {manager.GetNumberOfNodes()} nós")
-    
-    if routing.vehicles() == 0 or manager.GetNumberOfNodes() == 0:
-        logging.critical("❌ Modelo inválido: sem veículos ou nós.")
+    logging.debug(f"🔍 Validando modelo: {routing.vehicles()} veículos, {manager.GetNumberOfNodes()} nós")    
+    logger.debug(f"🔍 Validando modelo: {routing.vehicles()} veículos, {routing.Size()} nós")
+    if routing.vehicles() == 0 or routing.Size() == 0:
+        logger.critical("❌ Modelo inválido: sem veículos ou nós.")
         return None
 
     try:
