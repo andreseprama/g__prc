@@ -46,6 +46,20 @@ def solve_with_params(
     search_params.local_search_metaheuristic = metaheuristic_map.get(
         local_search_metaheuristic.lower(), routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     )
+    
+    # Proteção antes de Solve
+    logging.debug(f"🔍 Validando modelo: {routing.vehicles()} veículos, {manager.GetNumberOfNodes()} nós")
+    
+    if routing.vehicles() == 0 or manager.GetNumberOfNodes() == 0:
+        logging.critical("❌ Modelo inválido: sem veículos ou nós.")
+        return None
+
+    try:
+        for i in range(manager.GetNumberOfNodes()):
+            manager.IndexToNode(i)  # Valida se todos os índices são mapeáveis
+    except Exception as e:
+        logging.critical(f"❌ Erro ao validar índices de nodes: {e}")
+        return None
 
     solution = routing.SolveWithParameters(search_params)
 

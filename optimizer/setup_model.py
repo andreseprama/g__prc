@@ -10,6 +10,8 @@ from backend.solver.optimizer.city_mapping import (
     map_bases_to_indices,
 )
 
+from backend.solver.logger_diagnostico import diagnostico_logger
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,6 +126,16 @@ def setup_routing_model(
     logger.info(f"➞ Cidades únicas utilizadas ({len(locations)}): {locations}")
     if debug:
         logger.debug(f"📍 city_index_map: {city_index_map}")
+        
+        
+    # Verificação da consistência da matriz de distância
+    if not dist_matrix or not isinstance(dist_matrix, list):
+        raise ValueError("❌ dist_matrix ausente ou inválida")
+
+    n_nodes = len(dist_matrix)
+    for i, row in enumerate(dist_matrix):
+        if len(row) != n_nodes:
+            raise ValueError(f"❌ Matriz não quadrada: linha {i} tem {len(row)} colunas, esperado {n_nodes}")    
 
     for i, row in enumerate(dist_matrix):
         for j, val in enumerate(row):
@@ -185,5 +197,12 @@ def setup_routing_model(
                 continue
             row = df.iloc[df_idx]
             logger.debug(f"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row.get('matricula')}, cidade={row.get('load_city')}")
+
+
+    if routing.vehicles() == 0 or manager.GetNumberOfNodes() == 0:
+        logging.critical("❌ Modelo inválido: sem veículos ou nós.")
+        return None
+    
+    
 
     return routing, manager, starts, padded_matrix, df_idx_map
