@@ -54,23 +54,35 @@ def set_cost_callback(
     dist_matrix: List[List[int]],
 ):
     """
-    Define o callback de custo baseado na matriz de distâncias, com proteções.
+    Define o callback de custo baseado na matriz de distâncias, com proteções adicionais
+    para evitar segmentation fault por acessos fora da matriz.
     """
 
-    def cost_cb(i, j):
+    DEFAULT_PENALTY = 999_999
+
+    def cost_cb(i: int, j: int) -> int:
         try:
+            if not (0 <= i < manager.GetNumberOfIndices()) or not (0 <= j < manager.GetNumberOfIndices()):
+                logger.warning(f"⚠️ Índice i={i} ou j={j} fora de range válido do manager.")
+                return DEFAULT_PENALTY
+
             from_node = manager.IndexToNode(i)
             to_node = manager.IndexToNode(j)
+
+            if not (0 <= from_node < len(dist_matrix)) or not (0 <= to_node < len(dist_matrix[from_node])):
+                logger.warning(f"⚠️ Nós fora da matriz: from_node={from_node}, to_node={to_node}")
+                return DEFAULT_PENALTY
+
             return dist_matrix[from_node][to_node]
+
         except Exception as e:
-            from_node = manager.IndexToNode(i)
-            to_node = manager.IndexToNode(j)
-            logger.error(f"⛔ cost_cb failed: i={i} j={j} from={from_node} to={to_node} → {e}")
-            return 1  # ⚠️ fallback leve p/ evitar travamento total
+            logger.error(f"⛔ cost_cb erro: i={i} j={j} from={from_node} to={to_node} → {e}")
+            return DEFAULT_PENALTY
 
     index = routing.RegisterTransitCallback(cost_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(index)
-    logger.debug("✅ Callback de custo registrado")
+    logger.debug("✅ Callback de custo registrado com proteção extra")
+
 
 
 def setup_routing_model(
@@ -99,7 +111,7 @@ def setup_routing_model(
 
     locations, city_index_map, dist_matrix = build_city_index_and_matrix(df, trailers)
 
-    logger.info(f"➡️ Cidades únicas utilizadas ({len(locations)}): {locations}")
+    logger.info(f"➞ Cidades únicas utilizadas ({len(locations)}): {locations}")
     if debug:
         logger.debug(f"📍 city_index_map: {city_index_map}")
 
@@ -108,22 +120,24 @@ def setup_routing_model(
             if not isinstance(val, int) or val < 0:
                 logger.error(f"🚫 dist_matrix[{i}][{j}] inválido: {val}")
                 if i < len(locations) and j < len(locations):
-                    logger.error(f"↪️ Cidades: {locations[i]} → {locations[j]}")
+                    logger.error(f"↪ Cidades: {locations[i]} → {locations[j]}")
                 raise ValueError(f"Distância inválida em dist_matrix[{i}][{j}] = {val}")
 
     starts, ends = map_bases_to_indices(trailers, city_index_map)
+
+    if not starts or not ends:
+        raise ValueError("❌ Não foi possível mapear bases de trailers para índices de cidade válidos.")
+
     logger.debug(f"🚚 Starts: {starts} | Ends: {ends}")
     logger.debug(f"📊 city_index_map: {city_index_map}")
     logger.debug(f"🧼 Total locations: {len(locations)}")
     if debug and dist_matrix:
-        logger.debug(f"🗟️ Exemplo dist_matrix[0][:5]: {dist_matrix[0][:5]}")
+        logger.debug(f"🕟️ Exemplo dist_matrix[0][:5]: {dist_matrix[0][:5]}")
 
     if not locations:
         raise ValueError("Lista de 'locations' está vazia — verifique entradas do DataFrame.")
 
     manager, routing = create_manager_and_model(locations, starts, ends)
-    logger.debug(f"🧐 manager.GetNumberOfNodes() = {manager.GetNumberOfNodes()}")
-    logger.debug(f"🧐 manager.GetNumberOfIndices() = {manager.GetNumberOfIndices()}")
 
     padded_matrix = pad_dist_matrix(dist_matrix, manager.GetNumberOfNodes())
 
@@ -132,7 +146,7 @@ def setup_routing_model(
             if not isinstance(val, int) or val < 0:
                 logger.error(f"🚫 Distância inválida em padded_matrix[{i}][{j}] = {val}")
                 if i < len(locations) and j < len(locations):
-                    logger.error(f"↪️ Cidades: {locations[i]} → {locations[j]}")
+                    logger.error(f"↪ Cidades: {locations[i]} → {locations[j]}")
                 raise ValueError(f"Distância inválida em padded_matrix[{i}][{j}] = {val}")
 
     if debug:
@@ -163,4 +177,3 @@ def setup_routing_model(
             logger.debug(f"🔗 Solver node {solver_idx} → df_idx {df_idx} → ID={row['id']}, matrícula={row.get('matricula')}, cidade={row.get('load_city')}")
 
     return routing, manager, starts, padded_matrix, df_idx_map
-
